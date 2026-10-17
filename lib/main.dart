@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'demo_store.dart';
 import 'package:http/http.dart' as http;
@@ -71,12 +72,24 @@ class _HomeState extends State<Home> {
   String error = '';
   List<dynamic> products = [], files = [];
   final search = TextEditingController();
+  Timer? _searchTimer;
+  static const suggestedLocations = ['Réception / Zone A', 'Rack A / Niveau 1', 'Rack A / Niveau 2', 'Rack B / Niveau 1', 'Rack B / Niveau 2', 'Rack C / Niveau 3', 'Zone peinture / Chariot 1', 'Zone peinture / Chariot 2', 'Zone contrôle', 'Zone expédition'];
+  void onSearchChanged(String _) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(const Duration(milliseconds: 320), () { if (mounted && page == 2) refresh(); });
+  }
+  Widget locationPicker(TextEditingController controller) => Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+    field(controller,'Emplacement précis'),
+    const Padding(padding:EdgeInsets.only(bottom:8),child:Text('Emplacements rapides',style:TextStyle(fontWeight:FontWeight.w600,fontSize:12))),
+    Wrap(spacing:6,runSpacing:4,children:suggestedLocations.map((loc)=>ActionChip(label:Text(loc,style:const TextStyle(fontSize:11)),onPressed:(){ controller.text=loc; controller.selection=TextSelection.collapsed(offset:controller.text.length); })).toList()),
+    const SizedBox(height:12),
+  ]);
   final categories = ['Liquide','Poudre','Solvant','Autre'];
   final statuses = ['Reçu','En attente','En peinture','Terminé','Expédié'];
   @override
   void initState() { super.initState(); init(); }
   @override
-  void dispose() { search.dispose(); super.dispose(); }
+  void dispose() { _searchTimer?.cancel(); search.dispose(); super.dispose(); }
   Future<void> init() async { await api.load(); await refresh(); }
   Future<void> refresh() async {
     if (!mounted) return;
@@ -155,7 +168,7 @@ class _HomeState extends State<Home> {
     final ref=TextEditingController(text:existing?['reference']?.toString()??''),client=TextEditingController(text:existing?['client']?.toString()??''),location=TextEditingController(text:existing?['location']?.toString()??''),notes=TextEditingController(text:existing?['notes']?.toString()??'');
     String status=existing?['status']?.toString()??'Reçu';
     await showDialog<void>(context:context,builder:(dialog)=>StatefulBuilder(builder:(context,update)=>AlertDialog(title:Text(existing==null?'Nouveau dossier':'Modifier le dossier'),content:SizedBox(width:450,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      field(ref,'Numéro de dossier'),field(client,'Nom du client'),field(location,'Emplacement précis (ex. Rack B / Niveau 2)'),
+      field(ref,'Numéro de dossier'),field(client,'Nom du client'),locationPicker(location),
       DropdownButtonFormField<String>(initialValue:status,decoration:const InputDecoration(labelText:'Étape'),items:statuses.map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v)=>update(()=>status=v!)),
       const SizedBox(height:12),field(notes,'Observations',lines:3)
     ]))),actions:[TextButton(onPressed:()=>Navigator.pop(dialog),child:const Text('Annuler')),FilledButton(onPressed:()=>execute(() async {
@@ -171,13 +184,13 @@ class _HomeState extends State<Home> {
       bottomNavigationBar:NavigationBar(selectedIndex:page,onDestinationSelected:(v)=>setState(()=>page=v),destinations:const [NavigationDestination(icon:Icon(Icons.dashboard_outlined),label:'Accueil'),NavigationDestination(icon:Icon(Icons.inventory_2_outlined),label:'Stocks'),NavigationDestination(icon:Icon(Icons.folder_copy_outlined),label:'Dossiers')]),
       floatingActionButton:page==0?null:FloatingActionButton.extended(onPressed:page==1?productEditor:()=>fileEditor(),icon:const Icon(Icons.add),label:Text(page==1?'Produit':'Dossier')),
       body:RefreshIndicator(onRefresh:refresh,child:ListView(padding:const EdgeInsets.symmetric(horizontal:16,vertical:14),children:[
-        Card(color:api.demo?const Color(0xffe3f7ed):const Color(0xffe9f2f5),child:Padding(padding:const EdgeInsets.symmetric(horizontal:14,vertical:8),child:Row(children:[Icon(api.demo?Icons.science_outlined:Icons.dns_outlined,color:const Color(0xff007d87)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(api.demo?'Démonstration active':'Mode serveur',style:const TextStyle(fontWeight:FontWeight.w700)),Text(api.demo?'Données fictives enregistrées sur ce téléphone':'Connexion au serveur Linux/NAS',style:const TextStyle(fontSize:11))])),Switch(value:api.demo,onChanged:(v)=>changeDemo(v))]))),
+        Card(color:api.demo?const Color(0xffe3f7ed):const Color(0xffe9f2f5),child:Padding(padding:const EdgeInsets.symmetric(horizontal:14,vertical:8),child:Row(children:[Icon(api.demo?Icons.science_outlined:Icons.dns_outlined,color:const Color(0xff007d87)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Mode démonstration',style:TextStyle(fontWeight:FontWeight.w700)),Text(api.demo?'ACTIF • Données fictives sur cet appareil':'Désactivé • Mode serveur Linux/NAS',style:const TextStyle(fontSize:11))])),Switch(value:api.demo,onChanged:(v)=>changeDemo(v))]))),
         if (busy) const LinearProgressIndicator(),
         if (error.isNotEmpty) Card(color:const Color(0xffffe8e6),child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(error),const SizedBox(height:8),TextButton(onPressed:settings,child:const Text('Configurer la connexion'))]))),
         if(page==0) ...[
-          Container(padding:const EdgeInsets.all(22),decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xff073d4b),Color(0xff087d85)]),borderRadius:BorderRadius.circular(24)),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('TABLEAU DE BORD',style:TextStyle(color:Color(0xff9ce9e3),fontWeight:FontWeight.bold,letterSpacing:2,fontSize:11)),SizedBox(height:8),Text('Votre atelier, en un coup d’œil',style:TextStyle(fontSize:25,fontWeight:FontWeight.w800,color:Colors.white)),SizedBox(height:8),Text('Stocks, commandes et emplacements réunis au même endroit.',style:TextStyle(color:Color(0xffd6eeef)))])),const SizedBox(height:18),
-          Wrap(spacing:12,runSpacing:12,children:[metric('Produits', '${products.length}',Icons.inventory_2),metric('Alertes stock','$alerts',Icons.warning_amber),metric('Dossiers','${files.length}',Icons.folder_open)]),
-          const SizedBox(height:28),const Text('Accès rapide',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),
+          Container(padding:const EdgeInsets.all(16),decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xff073d4b),Color(0xff087d85)]),borderRadius:BorderRadius.circular(24)),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('TABLEAU DE BORD',style:TextStyle(color:Color(0xff9ce9e3),fontWeight:FontWeight.bold,letterSpacing:2,fontSize:11)),SizedBox(height:8),Text('Votre atelier, en un coup d’œil',style:TextStyle(fontSize:21,fontWeight:FontWeight.w800,color:Colors.white)),SizedBox(height:5),Text('Stocks, commandes et emplacements réunis au même endroit.',style:TextStyle(color:Color(0xffd6eeef)))])),const SizedBox(height:18),
+          LayoutBuilder(builder:(context,constraints)=>Wrap(spacing:10,runSpacing:10,children:[metric('Produits','${products.length}',Icons.inventory_2,width:(constraints.maxWidth-10)/2),metric('Alertes stock','$alerts',Icons.warning_amber,width:(constraints.maxWidth-10)/2),metric('Dossiers','${files.length}',Icons.folder_open,width:(constraints.maxWidth-10)/2),metric('À traiter','${files.where((f)=>f['status']!='Terminé' && f['status']!='Expédié').length}',Icons.pending_actions,width:(constraints.maxWidth-10)/2)])),
+          const SizedBox(height:18),const Text('Accès rapide',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),
           Card(child:ListTile(leading:const Icon(Icons.search),title:const Text('Retrouver une commande'),subtitle:const Text('Par client, numéro ou emplacement'),trailing:const Icon(Icons.arrow_forward),onTap:()=>setState(()=>page=2))),
           Card(child:ListTile(leading:const Icon(Icons.add_box_outlined),title:const Text('Enregistrer une livraison de peinture'),trailing:const Icon(Icons.arrow_forward),onTap:()=>setState(()=>page=1))),
           if(alerts>0) Card(child:ListTile(leading:const Icon(Icons.warning_amber,color:Colors.deepOrange),title:Text('$alerts produit(s) à surveiller'),onTap:()=>setState(()=>page=1)))
@@ -190,16 +203,16 @@ class _HomeState extends State<Home> {
             title:Text(item['name'].toString(),style:const TextStyle(fontWeight:FontWeight.w600)),
             subtitle:Text('${item['category']} • ${item['location']}\nAlerte à ${item['alert_at']} ${item['unit']}'),isThreeLine:true,
             trailing:Column(mainAxisAlignment:MainAxisAlignment.center,mainAxisSize:MainAxisSize.min,children:[Text('${item['quantity']} ${item['unit']}',style:TextStyle(fontWeight:FontWeight.bold,color:(item['quantity'] as num)<=(item['alert_at'] as num)?Colors.deepOrange:null)),IconButton(tooltip:'Historique',icon:const Icon(Icons.history,size:21),onPressed:()=>showHistory(item['name'].toString(),'/products/${item['id']}/history',true))]),onTap:()=>movement(item))),
-          if(products.isEmpty) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.inventory_2_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun produit enregistré'),Text('Ajoutez un produit ou activez la démonstration.',textAlign:TextAlign.center)])))
+          if(products.isEmpty && !busy) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.inventory_2_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun produit enregistré'),Text('Ajoutez un produit ou activez la démonstration.',textAlign:TextAlign.center)])))
         ],
         if(page==2) ...[
           const Text('Suivi des dossiers',style:TextStyle(fontSize:23,fontWeight:FontWeight.bold)),const SizedBox(height:8),
-          TextField(controller:search,onChanged:(_)=>refresh(),decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:'Client, numéro de dossier, emplacement',suffixIcon:IconButton(onPressed:(){search.clear();refresh();},icon:const Icon(Icons.clear)))),const SizedBox(height:14),
+          TextField(controller:search,onChanged:onSearchChanged,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:'Client, numéro de dossier, emplacement',suffixIcon:IconButton(onPressed:(){search.clear();refresh();},icon:const Icon(Icons.clear)))),const SizedBox(height:14),
           for(final item in files.cast<Map<String,dynamic>>()) Card(child:ListTile(leading:const Icon(Icons.folder_outlined),title:Text('${item['reference']} • ${item['client']}',style:const TextStyle(fontWeight:FontWeight.w600)),subtitle:Text('📍 ${item['location']}\n${item['status']}${(item['notes'] as String).isEmpty?'':' • ${item['notes']}'}'),isThreeLine:true,trailing:IconButton(tooltip:'Historique du dossier',icon:const Icon(Icons.history),onPressed:()=>showHistory(item['reference'].toString(),'/files/${item['id']}/history',false)),onTap:()=>fileEditor(item))),
-          if(files.isEmpty) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.folder_open_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun dossier trouvé'),Text('Essayez une autre recherche ou créez un dossier.',textAlign:TextAlign.center)])))
+          if(files.isEmpty && !busy) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.folder_open_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun dossier trouvé'),Text('Essayez une autre recherche ou créez un dossier.',textAlign:TextAlign.center)])))
         ],
         const SizedBox(height:80)
       ])));
   }
-  Widget metric(String label,String value,IconData icon)=>SizedBox(width:145,height:125,child:Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(icon,color:const Color(0xff007d87)),const Spacer(),Text(value,style:const TextStyle(fontSize:27,fontWeight:FontWeight.w800)),Text(label,style:const TextStyle(fontSize:12))]))));
+  Widget metric(String label,String value,IconData icon,{double width=145})=>SizedBox(width:width,height:112,child:Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(icon,color:const Color(0xff007d87)),const Spacer(),Text(value,style:const TextStyle(fontSize:27,fontWeight:FontWeight.w800)),Text(label,style:const TextStyle(fontSize:12))]))));
 }
