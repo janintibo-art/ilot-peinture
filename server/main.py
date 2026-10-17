@@ -13,7 +13,9 @@ DATA = os.getenv('DATA_PATH', '/data/ilot.db')
 TOKEN = os.getenv('API_TOKEN', '')
 if len(TOKEN) < 32 or TOKEN == 'CHANGEZ_CETTE_CLE_AVANT_UTILISATION':
     raise RuntimeError('API_TOKEN absent ou trop court (minimum 32 caractères).')
+from accounts import router as account_router, init_accounts
 app = FastAPI(title='Îlot Peinture API', version='14.0', docs_url=None, redoc_url=None)
+app.include_router(account_router)
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -82,6 +84,7 @@ def startup():
         c.execute('CREATE INDEX IF NOT EXISTS idx_process_records_lot ON process_records(material_lot_id, id DESC)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_file_history_file ON file_history(file_id, id DESC)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_movements_product ON movements(product_id, id DESC)')
+    init_accounts()
 
 def auth(authorization: str | None):
     if not authorization or not hmac.compare_digest(authorization, 'Bearer ' + TOKEN):

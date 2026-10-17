@@ -3,7 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --create-home appuser && mkdir /data && chown appuser:appuser /data
-COPY main.py backup.py ./
+COPY main.py backup.py accounts.py bootstrap_account.py ./
 USER appuser
 ENV DATA_PATH=/data/ilot.db
 EXPOSE 8000
