@@ -7,12 +7,22 @@ class DemoStore {
     {'id': 1, 'name': 'Peinture liquide RAL 7016', 'category': 'Liquide', 'unit': 'L', 'quantity': 18.5, 'alert_at': 5.0, 'location': 'Armoire A / Niveau 2'},
     {'id': 2, 'name': 'Poudre polyester RAL 9010', 'category': 'Poudre', 'unit': 'kg', 'quantity': 3.0, 'alert_at': 5.0, 'location': 'Rack poudres B3'},
     {'id': 3, 'name': 'Solvant de nettoyage (fictif)', 'category': 'Solvant', 'unit': 'L', 'quantity': 12.0, 'alert_at': 4.0, 'location': 'Armoire produits C'},
+    {'id': 4, 'name': 'Peinture liquide RAL 9005', 'category': 'Liquide', 'unit': 'L', 'quantity': 7.5, 'alert_at': 8.0, 'location': 'Armoire A / Niveau 1'},
+    {'id': 5, 'name': 'Poudre epoxy RAL 3000', 'category': 'Poudre', 'unit': 'kg', 'quantity': 22.0, 'alert_at': 5.0, 'location': 'Rack poudres B1'},
+    {'id': 6, 'name': 'Diluant technique (fictif)', 'category': 'Solvant', 'unit': 'L', 'quantity': 2.0, 'alert_at': 3.0, 'location': 'Armoire produits C'},
+    {'id': 7, 'name': 'Ruban de masquage', 'category': 'Autre', 'unit': 'unité', 'quantity': 24.0, 'alert_at': 10.0, 'location': 'Consommables A'},
   ];
   static const _seedFiles = [
     {'id': 1, 'reference': 'DEMO-2026-041', 'client': 'Ateliers Exemple', 'location': 'Rack A / Niveau 1', 'status': 'Reçu', 'notes': 'Pièces fictives à préparer'},
     {'id': 2, 'reference': 'DEMO-2026-042', 'client': 'Métal Démo', 'location': 'Zone peinture / Chariot 2', 'status': 'En peinture', 'notes': 'Teinte RAL 7016'},
-    {'id': 3, 'reference': 'DEMO-2026-043', 'client': 'Industrie Test', 'location': 'Rack C / Niveau 3', 'status': 'En attente', 'notes': ''},
+    {'id': 3, 'reference': 'DEMO-2026-043', 'client': 'Industrie Test', 'location': 'Rack C / Niveau 3', 'status': 'En attente', 'notes': 'Lot de supports'},
+    {'id': 4, 'reference': 'DEMO-2026-044', 'client': 'Ateliers Exemple', 'location': 'Zone contrôle', 'status': 'Terminé', 'notes': 'Contrôle visuel'},
+    {'id': 5, 'reference': 'DEMO-2026-045', 'client': 'Aluminium Démo', 'location': 'Zone expédition', 'status': 'Expédié', 'notes': 'Commande fictive'},
   ];
+  static Future<void> reset() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('ilot_demo_v7');
+  }
 
   Future<Map<String, dynamic>> _load(SharedPreferences prefs) async {
     final stored = prefs.getString('ilot_demo_v7');

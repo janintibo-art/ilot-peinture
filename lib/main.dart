@@ -113,11 +113,21 @@ class _HomeState extends State<Home> {
     search.clear();
     await refresh();
   }
+  Future<void> resetDemo() async {
+    if (!api.demo) return;
+    final yes = await showDialog<bool>(context:context,builder:(dialog)=>AlertDialog(title:const Text('Réinitialiser la démonstration ?'),content:const Text('Les modifications des données fictives seront effacées. Aucune donnée du serveur ne sera touchée.'),actions:[TextButton(onPressed:()=>Navigator.pop(dialog,false),child:const Text('Annuler')),FilledButton(onPressed:()=>Navigator.pop(dialog,true),child:const Text('Réinitialiser'))]));
+    if (yes == true) { await DemoStore.reset(); await refresh(); }
+  }
   Future<void> settings() async {
     final server = TextEditingController(text: api.url), key = TextEditingController(text: api.token);
     await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(title:const Text('Connexion au serveur'),content:SizedBox(width:420,child:Column(mainAxisSize:MainAxisSize.min,children:[
       field(server,'Adresse (ex. http://192.168.1.10:8000)'),field(key,'Clé d’accès'),
-      const Text('Le mode démonstration ne touche jamais aux données du serveur.',style:TextStyle(fontSize:12))])),actions:[
+      const Text('Exemple : http://192.168.1.10:8000 (réseau interne). Ne partagez jamais la clé sur GitHub.',style:TextStyle(fontSize:12)),
+      const SizedBox(height:8),OutlinedButton.icon(onPressed:() async {
+        final temp=Api()..url=server.text.trim().replaceAll(RegExp(r'/$'),'')..token=key.text.trim();
+        try { await temp.request('GET','/health'); if(dialog.mounted) ScaffoldMessenger.of(dialog).showSnackBar(const SnackBar(content:Text('Connexion réussie au serveur'))); }
+        catch(e) { if(dialog.mounted) ScaffoldMessenger.of(dialog).showSnackBar(SnackBar(content:Text('Échec : ${e.toString().replaceFirst('Exception: ','')}'))); }
+      },icon:const Icon(Icons.wifi_tethering),label:const Text('Tester la connexion'))])),actions:[
       TextButton(onPressed:()=>Navigator.pop(dialog),child:const Text('Annuler')),
       FilledButton(onPressed:() async {await api.save(server.text,key.text); if(dialog.mounted) Navigator.pop(dialog); await refresh();},child:const Text('Enregistrer'))]));
     server.dispose(); key.dispose();
@@ -180,11 +190,12 @@ class _HomeState extends State<Home> {
   @override
   Widget build(BuildContext context) {
     final alerts = products.where((p)=>(p['quantity'] as num).toDouble()<=(p['alert_at'] as num).toDouble()).length;
-    return Scaffold(appBar:AppBar(title:const Row(mainAxisSize:MainAxisSize.min,children:[Icon(Icons.palette_outlined,color:Color(0xff007d87)),SizedBox(width:8),Flexible(child:Text('Îlot Peinture',overflow:TextOverflow.ellipsis,style:TextStyle(fontWeight:FontWeight.w800,fontSize:20)))]),actions:[IconButton(tooltip:'Actualiser',onPressed:refresh,icon:const Icon(Icons.refresh)),IconButton(tooltip:'Serveur',onPressed:settings,icon:const Icon(Icons.settings_outlined))]),
+    return Scaffold(appBar:AppBar(title:Row(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/icon.png',width:36,height:36),const SizedBox(width:8),const Flexible(child:Text('Îlot Peinture',overflow:TextOverflow.ellipsis,style:TextStyle(fontWeight:FontWeight.w800,fontSize:20)))]),actions:[IconButton(tooltip:'Actualiser',onPressed:refresh,icon:const Icon(Icons.refresh)),IconButton(tooltip:'Serveur',onPressed:settings,icon:const Icon(Icons.settings_outlined))]),
       bottomNavigationBar:NavigationBar(selectedIndex:page,onDestinationSelected:(v)=>setState(()=>page=v),destinations:const [NavigationDestination(icon:Icon(Icons.dashboard_outlined),label:'Accueil'),NavigationDestination(icon:Icon(Icons.inventory_2_outlined),label:'Stocks'),NavigationDestination(icon:Icon(Icons.folder_copy_outlined),label:'Dossiers')]),
       floatingActionButton:page==0?null:FloatingActionButton.extended(onPressed:page==1?productEditor:()=>fileEditor(),icon:const Icon(Icons.add),label:Text(page==1?'Produit':'Dossier')),
       body:RefreshIndicator(onRefresh:refresh,child:ListView(padding:const EdgeInsets.symmetric(horizontal:16,vertical:14),children:[
         Card(color:api.demo?const Color(0xffe3f7ed):const Color(0xffe9f2f5),child:Padding(padding:const EdgeInsets.symmetric(horizontal:14,vertical:8),child:Row(children:[Icon(api.demo?Icons.science_outlined:Icons.dns_outlined,color:const Color(0xff007d87)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Mode démonstration',style:TextStyle(fontWeight:FontWeight.w700)),Text(api.demo?'ACTIF • Données fictives sur cet appareil':'Désactivé • Mode serveur Linux/NAS',style:const TextStyle(fontSize:11))])),Switch(value:api.demo,onChanged:(v)=>changeDemo(v))]))),
+        if (api.demo) Padding(padding:const EdgeInsets.only(bottom:10),child:Row(children:[const Expanded(child:Text('EXEMPLES FICTIFS · Aucune donnée entreprise',style:TextStyle(fontSize:10,color:Color(0xff087d85),fontWeight:FontWeight.w700))),TextButton.icon(onPressed:resetDemo,icon:const Icon(Icons.restart_alt,size:17),label:const Text('Réinitialiser'))])),
         if (busy) const LinearProgressIndicator(),
         if (error.isNotEmpty) Card(color:const Color(0xffffe8e6),child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(error),const SizedBox(height:8),TextButton(onPressed:settings,child:const Text('Configurer la connexion'))]))),
         if(page==0) ...[
@@ -208,7 +219,7 @@ class _HomeState extends State<Home> {
         if(page==2) ...[
           const Text('Suivi des dossiers',style:TextStyle(fontSize:23,fontWeight:FontWeight.bold)),const SizedBox(height:8),
           TextField(controller:search,onChanged:onSearchChanged,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:'Client, numéro de dossier, emplacement',suffixIcon:IconButton(onPressed:(){search.clear();refresh();},icon:const Icon(Icons.clear)))),const SizedBox(height:14),
-          for(final item in files.cast<Map<String,dynamic>>()) Card(child:ListTile(leading:const Icon(Icons.folder_outlined),title:Text('${item['reference']} • ${item['client']}',style:const TextStyle(fontWeight:FontWeight.w600)),subtitle:Text('📍 ${item['location']}\n${item['status']}${(item['notes'] as String).isEmpty?'':' • ${item['notes']}'}'),isThreeLine:true,trailing:IconButton(tooltip:'Historique du dossier',icon:const Icon(Icons.history),onPressed:()=>showHistory(item['reference'].toString(),'/files/${item['id']}/history',false)),onTap:()=>fileEditor(item))),
+          for(final item in files.cast<Map<String,dynamic>>()) Card(child:Padding(padding:const EdgeInsets.symmetric(vertical:5),child:ListTile(leading:const CircleAvatar(backgroundColor:Color(0xffe3f1f2),child:Icon(Icons.folder_outlined,color:Color(0xff007d87))),title:Text('${item['reference']} • ${item['client']}',style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const SizedBox(height:7),Text('📍 ${item['location']}',style:const TextStyle(fontWeight:FontWeight.w700,color:Color(0xff007d87))),const SizedBox(height:3),Text('Statut : ${item['status']}'),if((item['notes']??'').toString().isNotEmpty) Text(item['notes'].toString(),maxLines:2,overflow:TextOverflow.ellipsis)]),trailing:IconButton(tooltip:'Historique du dossier',icon:const Icon(Icons.history),onPressed:()=>showHistory(item['reference'].toString(),'/files/${item['id']}/history',false)),onTap:()=>fileEditor(item)))),
           if(files.isEmpty && !busy) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.folder_open_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun dossier trouvé'),Text('Essayez une autre recherche ou créez un dossier.',textAlign:TextAlign.center)])))
         ],
         const SizedBox(height:80)

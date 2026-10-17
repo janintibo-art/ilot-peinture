@@ -18,6 +18,12 @@ jobs:
           channel: stable
       - name: Generate platform project
         run: flutter create --platforms=android --project-name ilot_peinture --org fr.ilotpeinture .
+      - name: Install branded Android launcher icon
+        run: |
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "android/app/src/main/res/mipmap-${density}"
+            cp "assets/launcher_${density}.png" "android/app/src/main/res/mipmap-${density}/ic_launcher.png"
+          done
       - name: Install dependencies
         run: flutter pub get
       - name: Allow server HTTP inside private network
@@ -49,6 +55,8 @@ jobs:
         run: |
           mkdir -p public
           cp site/index.html public/index.html
+          cp assets/logo.png public/logo.png
+          cp assets/icon.png public/icon.png
           sed -i "s/__BUILD__/${GITHUB_RUN_NUMBER}/g" public/index.html
           touch public/.nojekyll
       - name: Publish site to gh-pages without Actions artifacts
