@@ -13,7 +13,7 @@ DATA = os.getenv('DATA_PATH', '/data/ilot.db')
 TOKEN = os.getenv('API_TOKEN', '')
 if len(TOKEN) < 32 or TOKEN == 'CHANGEZ_CETTE_CLE_AVANT_UTILISATION':
     raise RuntimeError('API_TOKEN absent ou trop court (minimum 32 caractères).')
-app = FastAPI(title='Îlot Peinture API', version='12.0', docs_url=None, redoc_url=None)
+app = FastAPI(title='Îlot Peinture API', version='14.0', docs_url=None, redoc_url=None)
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -60,6 +60,26 @@ def startup():
         c.execute("""CREATE TABLE IF NOT EXISTS locations (
           id INTEGER PRIMARY KEY, zone_id INTEGER NOT NULL REFERENCES zones(id),
           name TEXT NOT NULL UNIQUE COLLATE NOCASE)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS material_lots (
+          id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL REFERENCES products(id),
+          supplier TEXT NOT NULL, supplier_reference TEXT NOT NULL,
+          lot_number TEXT NOT NULL, received_at TEXT NOT NULL,
+          expires_on TEXT, certificate_ref TEXT NOT NULL DEFAULT '',
+          notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+          UNIQUE(product_id, lot_number))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS process_records (
+          id INTEGER PRIMARY KEY, file_id INTEGER NOT NULL REFERENCES files(id),
+          material_lot_id INTEGER NOT NULL REFERENCES material_lots(id),
+          process_type TEXT NOT NULL CHECK(process_type IN ('Liquide','Poudre')),
+          quantity REAL NOT NULL CHECK(quantity > 0), unit TEXT NOT NULL,
+          operator_number TEXT NOT NULL, operation_at TEXT NOT NULL,
+          hardener_lot TEXT NOT NULL DEFAULT '', mix_ratio TEXT NOT NULL DEFAULT '',
+          pot_life_minutes INTEGER, powder_temperature_c REAL,
+          powder_duration_minutes INTEGER, notes TEXT NOT NULL DEFAULT '',
+          recorded_at TEXT NOT NULL)""")
+        c.execute('CREATE INDEX IF NOT EXISTS idx_material_lots_product ON material_lots(product_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_process_records_file ON process_records(file_id, id DESC)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_process_records_lot ON process_records(material_lot_id, id DESC)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_file_history_file ON file_history(file_id, id DESC)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_movements_product ON movements(product_id, id DESC)')
 
@@ -222,3 +242,103 @@ def delete_zone(zone_id: int, authorization: str | None = Header(default=None)):
         cur=c.execute('DELETE FROM zones WHERE id=?',(zone_id,))
         if not cur.rowcount: raise HTTPException(404,'Zone introuvable')
         return {'deleted':True}
+
+
+# V14 : registre pilote de lots et opérations.
+# Une clé serveur commune ne constitue PAS une authentification individuelle.
+# Les numéros opérateurs saisis ne sont pas des preuves d'identité.
+class MaterialLotIn(BaseModel):
+    product_id: int = Field(gt=0)
+    supplier: str = Field(min_length=1, max_length=150)
+    supplier_reference: str = Field(min_length=1, max_length=150)
+    lot_number: str = Field(min_length=1, max_length=100)
+    received_at: str = Field(min_length=10, max_length=35)
+    expires_on: str | None = Field(default=None, max_length=35)
+    certificate_ref: str = Field(default='', max_length=200)
+    notes: str = Field(default='', max_length=1000)
+
+class ProcessRecordIn(BaseModel):
+    file_id: int = Field(gt=0)
+    material_lot_id: int = Field(gt=0)
+    process_type: Literal['Liquide', 'Poudre']
+    quantity: float = Field(gt=0, allow_inf_nan=False)
+    unit: Literal['kg', 'L', 'unité']
+    operator_number: str = Field(min_length=1, max_length=20, pattern=r'^\d+$')
+    operation_at: str = Field(min_length=10, max_length=35)
+    hardener_lot: str = Field(default='', max_length=100)
+    mix_ratio: str = Field(default='', max_length=100)
+    pot_life_minutes: int | None = Field(default=None, gt=0)
+    powder_temperature_c: float | None = Field(default=None, allow_inf_nan=False)
+    powder_duration_minutes: int | None = Field(default=None, gt=0)
+    notes: str = Field(default='', max_length=1000)
+
+@app.get('/material-lots')
+def list_material_lots(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    with db() as c:
+        return [dict(row) for row in c.execute("""
+          SELECT l.*,p.name AS product_name,p.category,p.unit FROM material_lots l
+          JOIN products p ON p.id=l.product_id ORDER BY l.id DESC LIMIT 500""")]
+
+@app.post('/material-lots', status_code=201)
+def add_material_lot(item: MaterialLotIn, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    with db() as c:
+        product=c.execute('SELECT id FROM products WHERE id=?',(item.product_id,)).fetchone()
+        if product is None: raise HTTPException(404,'Produit introuvable')
+        try:
+            cur=c.execute("""INSERT INTO material_lots
+              (product_id,supplier,supplier_reference,lot_number,received_at,expires_on,certificate_ref,notes,created_at)
+              VALUES(?,?,?,?,?,?,?,?,?)""",
+              (item.product_id,item.supplier,item.supplier_reference,item.lot_number,item.received_at,
+               item.expires_on,item.certificate_ref,item.notes,now()))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409,'Ce numéro de lot existe déjà pour ce produit')
+        return {'id':cur.lastrowid}
+
+@app.post('/process-records', status_code=201)
+def add_process_record(item: ProcessRecordIn, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    # Paramètres d'application distincts selon le procédé.
+    if item.process_type == 'Liquide' and (not item.hardener_lot or not item.mix_ratio or item.pot_life_minutes is None):
+        raise HTTPException(422,'Liquide : durcisseur, dosage et durée de vie du mélange requis')
+    if item.process_type == 'Poudre' and (item.powder_temperature_c is None or item.powder_duration_minutes is None):
+        raise HTTPException(422,'Poudre : température et durée de cuisson requises')
+    with db() as c:
+        if c.execute('SELECT id FROM files WHERE id=?',(item.file_id,)).fetchone() is None:
+            raise HTTPException(404,'Dossier introuvable')
+        lot=c.execute("""SELECT p.category,p.unit FROM material_lots l
+                         JOIN products p ON l.product_id=p.id WHERE l.id=?""",(item.material_lot_id,)).fetchone()
+        if lot is None: raise HTTPException(404,'Lot introuvable')
+        if lot['category'] != item.process_type or lot['unit'] != item.unit:
+            raise HTTPException(422,'Lot ou unité incompatible avec le procédé')
+        cur=c.execute("""INSERT INTO process_records
+          (file_id,material_lot_id,process_type,quantity,unit,operator_number,operation_at,
+           hardener_lot,mix_ratio,pot_life_minutes,powder_temperature_c,powder_duration_minutes,notes,recorded_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+          (item.file_id,item.material_lot_id,item.process_type,item.quantity,item.unit,
+           item.operator_number,item.operation_at,item.hardener_lot,item.mix_ratio,item.pot_life_minutes,
+           item.powder_temperature_c,item.powder_duration_minutes,item.notes,now()))
+        return {'id':cur.lastrowid}
+
+@app.get('/files/{file_id}/traceability')
+def file_traceability(file_id: int, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    with db() as c:
+        f=c.execute('SELECT * FROM files WHERE id=?',(file_id,)).fetchone()
+        if f is None: raise HTTPException(404,'Dossier introuvable')
+        rows=c.execute("""SELECT r.*,l.lot_number,l.supplier,l.supplier_reference,l.certificate_ref,
+          p.name AS product_name FROM process_records r
+          JOIN material_lots l ON l.id=r.material_lot_id
+          JOIN products p ON p.id=l.product_id WHERE r.file_id=? ORDER BY r.id DESC""",(file_id,)).fetchall()
+        return {'file':dict(f),'operations':[dict(row) for row in rows]}
+
+@app.get('/material-lots/{lot_id}/traceability')
+def lot_traceability(lot_id: int, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    with db() as c:
+        lot=c.execute('SELECT * FROM material_lots WHERE id=?',(lot_id,)).fetchone()
+        if lot is None: raise HTTPException(404,'Lot introuvable')
+        rows=c.execute("""SELECT r.*,f.reference,f.client FROM process_records r
+          JOIN files f ON r.file_id=f.id WHERE r.material_lot_id=? ORDER BY r.id DESC""",(lot_id,)).fetchall()
+        return {'lot':dict(lot),'operations':[dict(row) for row in rows]}
