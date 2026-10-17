@@ -1,9 +1,11 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ilot_peinture/main.dart';
+
 void main() {
-  testWidgets('Shows initial navigation', (tester) async {
+  testWidgets('La navigation principale est visible', (tester) async {
     await tester.pumpWidget(const IlotApp());
-    expect(find.text('Stocks'), findsOneWidget);
-    expect(find.text('Dossiers'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(NavigationDestination), findsNWidgets(3));
   });
 }
