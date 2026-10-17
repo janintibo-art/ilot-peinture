@@ -3,6 +3,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: ilot-peinture-pages
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,7 +37,29 @@ jobs:
         run: flutter test
       - name: Build
         run: flutter build apk --release
-      - uses: actions/upload-artifact@v4
+      - name: Upload downloadable APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: ilot-peinture-v1-apk
+          name: ilot-peinture-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Prepare website with latest APK
+        run: |
+          mkdir -p public/downloads
+          cp site/index.html public/index.html
+          cp build/app/outputs/flutter-apk/app-release.apk public/downloads/ilot-peinture.apk
+          sed -i "s/__BUILD__/${GITHUB_RUN_NUMBER}/g" public/index.html
+          touch public/.nojekyll
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

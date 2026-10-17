@@ -1,40 +1,48 @@
-# Îlot Peinture — v1
+# Îlot Peinture — V2 (Linux / NAS + Android)
 
-Application Android Flutter + serveur FastAPI pour gérer les produits de peinture et retrouver les dossiers dans l'atelier.
+Cette mise à jour conserve les fonctions V1 (produits, mouvements, recherche de dossiers) et ajoute des historiques consultables ainsi qu’une configuration serveur sans clé par défaut.
 
-## Fonctionnalités
-- Gestion des peintures liquides / poudres, solvants, autres consommables.
-- Quantités, unités, seuils d'alerte, emplacement, mouvements d'entrée/sortie horodatés côté serveur.
-- Dossiers avec numéro unique, client, emplacement précis, statut et observations.
-- Recherche de dossier par client, référence et emplacement.
-- Synchronisation par API partagée : plusieurs Android sur le même réseau utilisent les mêmes données.
-- Tableau de bord, interface mobile, connexion configurable au serveur.
+## Déploiement initial sur le serveur Linux / NAS
 
-## Installation serveur
-Sur un PC/serveur **allumé en permanence** avec Docker installé :
+Le serveur doit disposer de Docker et de `docker compose`, être connecté au réseau privé de l'entreprise et idéalement avoir une adresse IP LAN réservée.
 
-```bash
-cd server
-```
+1. Copier le dossier `server` du dépôt sur le Linux/NAS (par ex. `/opt/ilot-peinture/server`).
+2. Dans ce dossier, copier `.env.example` vers `.env`.
+3. Générer une clé aléatoire longue avec `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` et la coller dans `.env` à la place de l'exemple. **Ne pas partager cette clé publiquement.**
+4. Démarrer `docker compose up -d --build` dans le dossier `server`.
+5. Vérifier `http://IP_SERVEUR:8000/health` sur le réseau privé (réponse JSON `status: ok`).
+6. Sur chaque Android, ouvrir Réglages, saisir `http://IP_SERVEUR:8000` et la même clé.
 
-Éditer `docker-compose.yml` et remplacer impérativement la valeur `CHANGEZ_CETTE_CLE_AVANT_UTILISATION` par une clé longue et aléatoire, puis :
+**NAS** : fonctionne uniquement si Docker/Container Manager et Docker Compose sont compatibles avec le NAS ; sinon héberger le serveur sur une machine Linux du réseau.
 
-```bash
-docker compose up -d --build
-```
+## Mise à jour d'un serveur V1
 
-Serveur disponible sur `http://ADRESSE_IP_DU_SERVEUR:8000` sur le LAN. Réserver une IP locale fixe dans votre routeur. Dans les réglages Android, saisir cette URL et la clé définie dans Docker.
+Sauvegarder la base avant de redéployer. Préparer `.env` et redémarrer avec `docker compose up -d --build`. La table `file_history` est créée automatiquement au démarrage et les données existantes restent dans le volume `ilot_data` tant que ce volume n'est pas supprimé. Ne jamais lancer `docker compose down -v` sans sauvegarde.
 
-## Android
-Un push sur `main` exécute GitHub Actions > **Build APK Android**. L'APK est dans **Artifacts**, rubrique `ilot-peinture-v1-apk`. Le workflow génère le projet Android Flutter et autorise le HTTP pour un **réseau local privé** uniquement.
+## Historique
 
-## Sécurité et limites de la v1
-- Prototype d'atelier : une clé partagée entre appareils, sans comptes personnels ni rôles. Ne pas exposer le port 8000 à Internet.
-- Utiliser un réseau Wi-Fi d'entreprise protégé, idéalement un VLAN et HTTPS via reverse proxy. Aucun secret ne doit être commité dans GitHub ; définir le secret localement au serveur.
-- Faire une sauvegarde quotidienne du volume `ilot_data`, tester la restauration.
-- Mouvements conservés dans la base, mais pas encore d'écran historique ou d'inventaire d'audit.
-- Pas encore de gestion des lots, DLU, FDS, pictogrammes CLP, habilitations, commandes fournisseurs, alertes push, photos, lecteurs code-barres ni mode hors ligne.
-- Le comptage des dossiers affiche les 300 derniers résultats dans cette version ; une pagination serveur sera nécessaire au-delà.
+- Chaque changement d'emplacement ou de statut d'un dossier est horodaté dans `file_history`.
+- Historique stock des produits, y compris le stock initial des **nouveaux** produits V2. Les stocks initiaux enregistrés sous V1 ne peuvent pas être reconstitués rétroactivement.
+- Les écrans d'historique affichent les 150 dernières entrées par objet.
 
-## Architecture
-`lib/main.dart` : appli Flutter. `server/main.py` : API FastAPI/SQLite. `server/docker-compose.yml` : hébergement et stockage persistant. `.github/workflows/build-apk.yml` : APK CI.
+## Sécurité importante
+
+- `server/.env` est ignoré par Git ; aucune clé n'est contenue dans le dépôt.
+- Le serveur refuse de démarrer avec une clé absente ou trop courte.
+- Port 8000 **uniquement sur le réseau interne protégé** : firewall, pas de redirection Internet. Pour un accès externe, prévoir HTTPS, VPN et comptes utilisateurs.
+- La clé est pour le moment **commune à tous les Android** et sauvegardée dans les préférences locales. Ce n'est pas encore une solution prête à traiter des données sensibles en environnement de production. Prochaine étape : comptes individuels / rôles et stockage sécurisé des identifiants.
+- Prévoir des sauvegardes automatiques du volume Docker `ilot_data` et tester régulièrement une restauration. SQLite est adapté à une petite équipe sur une seule instance serveur ; pour une forte concurrence, envisager PostgreSQL.
+- Ne pas remplacer une sauvegarde SQL par une simple copie du fichier `.db` pendant les écritures en WAL. Utiliser l'API de sauvegarde SQLite ou arrêter proprement le service.
+
+## APK Android
+
+GitHub Actions, workflow **Build APK Android** ; artifact `ilot-peinture-v2-apk` après build réussi. Installation manuelle sur chaque appareil. Le HTTP Android est autorisé pour le LAN privé ; éviter les réseaux non maîtrisés.
+
+
+## Site vitrine GitHub Pages (V4)
+
+Le site public est dans `site/index.html`. Chaque workflow réussi copie l'APK dans `downloads/ilot-peinture.apk`, met à jour le numéro de build et publie le site avec `actions/deploy-pages`. Lien prévu : https://janintibo-art.github.io/ilot-peinture/ (actif uniquement après configuration et premier déploiement vert).
+
+**Activation une seule fois** : sur GitHub, dépôt → Settings → Pages → Build and deployment → Source : **GitHub Actions**. Sur un dépôt privé, l'accès GitHub Pages dépend du plan/visibilité et de la politique de l'organisation. Pour permettre un accès sans compte GitHub, vérifier que le site est effectivement public. Ne jamais placer les clés, les URL serveur privées ni les données clients dans les fichiers du site ou dans un dépôt public.
+
+En cas d'échec de `flutter test` ou du build Android, la publication est interrompue et le dernier APK publié est conservé. **Chaque nouveau build vert** met à jour l'APK du site : les collègues doivent télécharger de nouveau la dernière version pour la tester.
