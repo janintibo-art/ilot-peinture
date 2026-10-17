@@ -354,12 +354,23 @@ class _HomeState extends State<Home> {
         ],
         if(page==1) ...[
           const Text('Stocks & consommables',style:TextStyle(fontSize:23,fontWeight:FontWeight.w800,color:Color(0xff103d4b))),const SizedBox(height:8),
-          const Text('Peintures liquides, poudres, solvants et autres produits.'),const SizedBox(height:12),
-          for(final item in products.cast<Map<String,dynamic>>()) Card(child:ListTile(
-            leading:CircleAvatar(child:Icon(item['category']=='Poudre'?Icons.grain:item['category']=='Solvant'?Icons.science:Icons.opacity)),
-            title:Text(item['name'].toString(),style:const TextStyle(fontWeight:FontWeight.w600)),
-            subtitle:Text('${item['category']} • ${item['location']}\nAlerte à ${item['alert_at']} ${item['unit']}'),isThreeLine:true,
-            trailing:Column(mainAxisAlignment:MainAxisAlignment.center,mainAxisSize:MainAxisSize.min,children:[Text('${item['quantity']} ${item['unit']}',style:TextStyle(fontWeight:FontWeight.bold,color:(item['quantity'] as num)<=(item['alert_at'] as num)?Colors.deepOrange:null)),IconButton(tooltip:'Historique',icon:const Icon(Icons.history,size:21),onPressed:()=>showHistory(item['name'].toString(),'/products/${item['id']}/history',true))]),onTap:()=>movement(item))),
+          const Text('Choisissez une matière pour enregistrer une entrée ou une sortie.'),const SizedBox(height:12),
+          for(final item in products.cast<Map<String,dynamic>>())
+            Builder(builder:(context){
+              final low=(item['quantity'] as num)<=(item['alert_at'] as num);
+              final family=item['category'].toString();
+              final tint=family=='Poudre'?const Color(0xff8855b6):family=='Solvant'?const Color(0xffb77822):const Color(0xff007d87);
+              final symbol=family=='Poudre'?Icons.grain:family=='Solvant'?Icons.science_outlined:Icons.opacity;
+              return Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                Row(children:[Container(padding:const EdgeInsets.all(10),decoration:BoxDecoration(color:tint.withValues(alpha:.12),borderRadius:BorderRadius.circular(13)),child:Icon(symbol,color:tint,size:25)),const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(item['name'].toString(),style:const TextStyle(fontWeight:FontWeight.w800,fontSize:16)),Text(family,style:TextStyle(color:tint,fontWeight:FontWeight.w700,fontSize:12))])),if(low) const Icon(Icons.warning_amber_rounded,color:Color(0xffb65317))]),
+                const SizedBox(height:12),
+                Row(children:[Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('STOCK DISPONIBLE',style:TextStyle(fontSize:10,letterSpacing:1,fontWeight:FontWeight.w800,color:Color(0xff63808b))),Text('${item['quantity']} ${item['unit']}',style:TextStyle(fontSize:24,fontWeight:FontWeight.w900,color:low?const Color(0xffb65317):const Color(0xff103d4b)))])),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('EMPLACEMENT',style:TextStyle(fontSize:10,letterSpacing:1,fontWeight:FontWeight.w800,color:Color(0xff63808b))),Text((item['location']??'Non renseigné').toString(),maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w700))]))]),
+                const SizedBox(height:5),Text('Seuil d’alerte : ${item['alert_at']} ${item['unit']}',style:const TextStyle(color:Color(0xff55727d),fontSize:12)),
+                const Divider(height:22),
+                Row(children:[Expanded(child:FilledButton.icon(onPressed:()=>movement(item),icon:const Icon(Icons.swap_vert,size:20),label:const Text('Entrée / Sortie'))),const SizedBox(width:8),IconButton.filledTonal(tooltip:'Historique des mouvements',onPressed:()=>showHistory(item['name'].toString(),'/products/${item['id']}/history',true),icon:const Icon(Icons.history))]),
+                const Text('Lots et certificats : fonction en préparation.',style:TextStyle(fontSize:11,color:Color(0xff6a8490))),
+              ])));
+            }),
           if(products.isEmpty && !busy) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.inventory_2_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun produit enregistré'),Text('Ajoutez un produit ou activez la démonstration.',textAlign:TextAlign.center)])))
         ],
         if(page==2) ...[
@@ -367,7 +378,14 @@ class _HomeState extends State<Home> {
           TextField(controller:search,onChanged:onSearchChanged,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:'Client, numéro de dossier, emplacement',suffixIcon:IconButton(onPressed:(){search.clear();refresh();},icon:const Icon(Icons.clear)))),const SizedBox(height:14),
           zoneBoard(),const SizedBox(height:16),
           Text(selectedZone=='Toutes'?'Tous les dossiers':'Dossiers : $selectedZone',style:const TextStyle(fontSize:17,fontWeight:FontWeight.w700)),const SizedBox(height:8),
-          for(final item in files.cast<Map<String,dynamic>>().where((item)=>selectedZone=='Toutes'||zoneOf(item['location'])==selectedZone)) Card(child:Padding(padding:const EdgeInsets.symmetric(vertical:5),child:ListTile(leading:const CircleAvatar(backgroundColor:Color(0xffe3f1f2),child:Icon(Icons.folder_outlined,color:Color(0xff007d87))),title:Text('${item['reference']} • ${item['client']}',style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const SizedBox(height:7),Text('📍 ${item['location']}',style:const TextStyle(fontWeight:FontWeight.w700,color:Color(0xff007d87))),const SizedBox(height:3),Text('Statut : ${item['status']}'),if((item['notes']??'').toString().isNotEmpty) Text(item['notes'].toString(),maxLines:2,overflow:TextOverflow.ellipsis)]),trailing:PopupMenuButton<String>(tooltip:'Actions du dossier',onSelected:(action){if(action=='move'){quickMove(item);}else if(action=='history'){showHistory(item['reference'].toString(),'/files/${item['id']}/history',false);}else{fileEditor(item);}},itemBuilder:(context)=>const [PopupMenuItem(value:'move',child:Text('Déplacer')),PopupMenuItem(value:'history',child:Text('Historique')),PopupMenuItem(value:'edit',child:Text('Modifier'))]),onTap:()=>fileEditor(item)))),
+          for(final item in files.cast<Map<String,dynamic>>().where((item)=>selectedZone=='Toutes'||zoneOf(item['location'])==selectedZone))
+            Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Row(children:[Expanded(child:Text(item['reference'].toString(),style:const TextStyle(fontWeight:FontWeight.w900,fontSize:18,color:Color(0xff113c4a)))),Container(padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),decoration:BoxDecoration(color:const Color(0xffdaf0ed),borderRadius:BorderRadius.circular(18)),child:Text(item['status'].toString(),style:const TextStyle(fontWeight:FontWeight.w700,color:Color(0xff006f78),fontSize:11)))]),
+              const SizedBox(height:3),Text(item['client'].toString(),style:const TextStyle(fontSize:15,fontWeight:FontWeight.w600)),
+              const SizedBox(height:12),Container(width:double.infinity,padding:const EdgeInsets.all(12),decoration:BoxDecoration(color:const Color(0xffe8f6f4),borderRadius:BorderRadius.circular(12)),child:Row(children:[const Icon(Icons.place_outlined,color:Color(0xff007d87)),const SizedBox(width:8),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('EMPLACEMENT ACTUEL',style:TextStyle(fontSize:10,fontWeight:FontWeight.w800,letterSpacing:1,color:Color(0xff547680))),Text(item['location'].toString(),style:const TextStyle(fontSize:15,fontWeight:FontWeight.w800,color:Color(0xff075b67)))]))])),
+              if((item['notes']??'').toString().isNotEmpty) Padding(padding:const EdgeInsets.only(top:8),child:Text(item['notes'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xff57717b),fontSize:12))),
+              const SizedBox(height:10),Row(children:[Expanded(child:FilledButton.tonalIcon(onPressed:()=>quickMove(item),icon:const Icon(Icons.move_up_outlined,size:19),label:const Text('Déplacer'))),const SizedBox(width:6),IconButton(tooltip:'Modifier la fiche',onPressed:()=>fileEditor(item),icon:const Icon(Icons.edit_outlined)),IconButton(tooltip:'Historique du dossier',onPressed:()=>showHistory(item['reference'].toString(),'/files/${item['id']}/history',false),icon:const Icon(Icons.history))]),
+            ]))),
           if(files.isEmpty && !busy) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.folder_open_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun dossier trouvé'),Text('Essayez une autre recherche ou créez un dossier.',textAlign:TextAlign.center)])))
         ],
         const SizedBox(height:80)
