@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      API_TOKEN: "CHANGEZ_CETTE_CLE_AVANT_UTILISATION"
+      DATA_PATH: /data/ilot.db
+    volumes:
+      - ilot_data:/data
+    restart: unless-stopped
+volumes:
+  ilot_data:
