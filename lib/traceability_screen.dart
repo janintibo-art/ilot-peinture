@@ -48,7 +48,7 @@ class _TraceabilityScreenState extends State<TraceabilityScreen> {
       await showDialog<void>(context:context,builder:(dialog)=>StatefulBuilder(builder:(ctx,update)=>AlertDialog(
         title:const Text('Nouveau lot fournisseur'),
         content:SizedBox(width:480,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-          DropdownButtonFormField<int>(value:product,isExpanded:true,decoration:decoration('Produit'),
+          DropdownButtonFormField<int>(initialValue:product,isExpanded:true,decoration:decoration('Produit'),
             items:widget.products.map((p)=>DropdownMenuItem<int>(value:p['id'] as int,child:Text(p['name'].toString(),overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)=>update(()=>product=v)),
           const SizedBox(height:12),field(supplier,'Fournisseur'),field(reference,'Référence fournisseur'),field(number,'Numéro de lot'),
           field(received,'Réception (AAAA-MM-JJ)'),field(expiry,'Péremption (facultative, AAAA-MM-JJ)'),field(certificate,'Référence certificat (facultative)'),field(notes,'Observations'),
@@ -84,9 +84,9 @@ class _TraceabilityScreenState extends State<TraceabilityScreen> {
         return AlertDialog(title:const Text('Enregistrer une opération'),content:SizedBox(width:480,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
           const Text('Registre pilote : numéro opérateur déclaratif, sans validation d’identité ni signature.',style:TextStyle(fontSize:12)),
           const SizedBox(height:12),
-          DropdownButtonFormField<int>(value:fileId,isExpanded:true,decoration:decoration('Dossier'),items:widget.files.map((f)=>DropdownMenuItem<int>(value:f['id'] as int,child:Text('${f['reference']} — ${f['client']}',overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)=>update(()=>fileId=v)),
+          DropdownButtonFormField<int>(initialValue:fileId,isExpanded:true,decoration:decoration('Dossier'),items:widget.files.map((f)=>DropdownMenuItem<int>(value:f['id'] as int,child:Text('${f['reference']} — ${f['client']}',overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)=>update(()=>fileId=v)),
           const SizedBox(height:12),
-          DropdownButtonFormField<int>(value:lotId,isExpanded:true,decoration:decoration('Lot matière'),items:allowed.map((l)=>DropdownMenuItem<int>(value:l['id'] as int,child:Text('${l['lot_number']} • ${l['product_name']}',overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)=>update(()=>lotId=v)),
+          DropdownButtonFormField<int>(initialValue:lotId,isExpanded:true,decoration:decoration('Lot matière'),items:allowed.map((l)=>DropdownMenuItem<int>(value:l['id'] as int,child:Text('${l['lot_number']} • ${l['product_name']}',overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)=>update(()=>lotId=v)),
           const SizedBox(height:12),field(qty,'Quantité utilisée (${lot['unit']})',keyboard:const TextInputType.numberWithOptions(decimal:true)),
           field(operator,'Numéro opérateur (déclaratif)',keyboard:TextInputType.number),field(operationAt,'Date et heure ISO (AAAA-MM-JJTHH:MM:SS)'),
           if(liquid) ...[field(hardener,'Lot durcisseur'),field(ratio,'Rapport de mélange'),field(pot,'Durée de vie mélange (minutes)',keyboard:TextInputType.number)]
