@@ -74,7 +74,84 @@ class _HomeState extends State<Home> {
   List<dynamic> products = [], files = [];
   final search = TextEditingController();
   Timer? _searchTimer;
-  static const suggestedLocations = ['Réception / Zone A', 'Rack A / Niveau 1', 'Rack A / Niveau 2', 'Rack B / Niveau 1', 'Rack B / Niveau 2', 'Rack C / Niveau 3', 'Zone peinture / Chariot 1', 'Zone peinture / Chariot 2', 'Zone contrôle', 'Zone expédition'];
+  static const Map<String, List<String>> defaultZoneLocations = {
+    'Réception': ['Réception / Zone A'],
+    'Racks': ['Rack A / Niveau 1', 'Rack A / Niveau 2', 'Rack B / Niveau 1', 'Rack B / Niveau 2', 'Rack C / Niveau 3'],
+    'Peinture': ['Zone peinture / Chariot 1', 'Zone peinture / Chariot 2'],
+    'Contrôle': ['Zone contrôle'],
+    'Expédition': ['Zone expédition'],
+  };
+  Map<String, List<String>> zoneLocations = defaultZoneLocations.map((key, value) => MapEntry(key, List<String>.from(value)));
+  Iterable<String> get suggestedLocations => zoneLocations.values.expand((list) => list);
+  List<String> get zones => ['Toutes', ...zoneLocations.keys, 'Autres'];
+  Future<void> loadZoneLocations() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('workshop_locations_v11');
+    if (saved == null) return;
+    try {
+      final map = jsonDecode(saved) as Map<String, dynamic>;
+      final parsed = <String, List<String>>{};
+      for (final entry in map.entries) {
+        final name = entry.key.trim();
+        if (name.isEmpty || name == 'Toutes' || name == 'Autres') continue;
+        if (entry.value is! List) continue;
+        parsed[name] = (entry.value as List).whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+      }
+      if (parsed.isNotEmpty && mounted) setState(() => zoneLocations = parsed);
+    } catch (_) { /* Configuration invalide : conserver les zones par défaut. */ }
+  }
+  Future<void> saveZoneLocations() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('workshop_locations_v11', jsonEncode(zoneLocations));
+    if (mounted) setState(() { if (!zones.contains(selectedZone)) selectedZone = 'Toutes'; });
+  }
+  Future<void> editLocations() async {
+    await showDialog<void>(context: context, builder: (dialog) => StatefulBuilder(builder: (context, update) => AlertDialog(
+      title: const Text('Zones et emplacements'),
+      content: SizedBox(width: 440, height: 410, child: Column(children: [
+        const Text('Cette configuration reste sur ce téléphone. La synchronisation via NAS sera ajoutée ultérieurement.', style: TextStyle(fontSize: 12)),
+        const SizedBox(height: 8),
+        Expanded(child: ListView(children: zoneLocations.entries.map((entry) => ExpansionTile(
+          title: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text('${entry.value.length} emplacement(s)'),
+          children: [
+            for (final location in entry.value) ListTile(dense: true, title: Text(location), trailing: IconButton(
+              tooltip: 'Supprimer cet emplacement', icon: const Icon(Icons.delete_outline), onPressed: () async {
+                if (files.any((f) => (f['location'] ?? '').toString() == location)) { message('Emplacement utilisé par un dossier : déplacez-le avant de le supprimer.'); return; }
+                update(() => zoneLocations[entry.key]!.remove(location)); await saveZoneLocations();
+              })),
+            TextButton.icon(icon: const Icon(Icons.add), label: const Text('Ajouter un emplacement'), onPressed: () async {
+              final value = await askLocationText('Nouvel emplacement', 'Nom de l’emplacement');
+              if (value == null || !mounted) return;
+              if (suggestedLocations.any((x) => x.toLowerCase() == value.toLowerCase())) { message('Cet emplacement existe déjà.'); return; }
+              update(() => zoneLocations[entry.key]!.add(value)); await saveZoneLocations();
+            }),
+            TextButton.icon(icon: const Icon(Icons.delete_outline), label: const Text('Supprimer la zone'), onPressed: () async {
+              if (entry.value.isNotEmpty || files.any((f) => zoneOf(f['location']) == entry.key)) { message('Videz la zone et déplacez ses dossiers avant suppression.'); return; }
+              if (zoneLocations.length <= 1) { message('Conservez au moins une zone.'); return; }
+              update(() => zoneLocations.remove(entry.key)); await saveZoneLocations();
+            }),
+          ],
+        )).toList())),
+      ])),
+      actions: [TextButton.icon(icon: const Icon(Icons.add), label: const Text('Nouvelle zone'), onPressed: () async {
+        final value = await askLocationText('Nouvelle zone', 'Nom de la zone');
+        if (value == null || !mounted) return;
+        if (zones.any((x) => x.toLowerCase() == value.toLowerCase())) { message('Cette zone existe déjà.'); return; }
+        update(() => zoneLocations[value] = []); await saveZoneLocations();
+      }), FilledButton(onPressed: () => Navigator.pop(dialog), child: const Text('Terminer'))],
+    )));
+  }
+  Future<String?> askLocationText(String title, String label) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(context: context, builder: (dialog) => AlertDialog(
+      title: Text(title), content: TextField(controller: controller, autofocus: true, maxLength: 80, decoration: InputDecoration(labelText: label)),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('Annuler')),
+        FilledButton(onPressed: () { final value = controller.text.trim(); if (value.isNotEmpty) Navigator.pop(dialog, value); }, child: const Text('Ajouter'))],
+    ));
+    controller.dispose();
+    return result;
+  }
   void onSearchChanged(String _) {
     _searchTimer?.cancel();
     _searchTimer = Timer(const Duration(milliseconds: 320), () { if (mounted && page == 2) refresh(); });
@@ -85,14 +162,22 @@ class _HomeState extends State<Home> {
     Wrap(spacing:6,runSpacing:4,children:suggestedLocations.map((loc)=>ActionChip(label:Text(loc,style:const TextStyle(fontSize:11)),onPressed:(){ controller.text=loc; controller.selection=TextSelection.collapsed(offset:controller.text.length); })).toList()),
     const SizedBox(height:12),
   ]);
-  static const zones = ['Toutes', 'Réception', 'Racks', 'Peinture', 'Contrôle', 'Expédition', 'Autres'];
   String zoneOf(Object? raw) {
-    final value = (raw ?? '').toString().toLowerCase();
-    if (value.contains('réception') || value.contains('reception')) return 'Réception';
-    if (value.contains('rack') || value.contains('étagère') || value.contains('etagere')) return 'Racks';
-    if (value.contains('peinture') || value.contains('chariot')) return 'Peinture';
-    if (value.contains('contrôle') || value.contains('controle')) return 'Contrôle';
-    if (value.contains('expédition') || value.contains('expedition')) return 'Expédition';
+    final value = (raw ?? '').toString().trim();
+    for (final entry in zoneLocations.entries) {
+      if (entry.value.any((loc) => loc.toLowerCase() == value.toLowerCase())) return entry.key;
+    }
+    final lower = value.toLowerCase();
+    // Compatibilité avec les dossiers existants et les libellés historiques.
+    final aliases = <String, List<String>>{
+      'Réception': ['réception', 'reception'], 'Racks': ['rack', 'étagère', 'etagere'],
+      'Peinture': ['peinture', 'chariot'], 'Contrôle': ['contrôle', 'controle'],
+      'Expédition': ['expédition', 'expedition'],
+    };
+    for (final entry in zoneLocations.keys) {
+      if (lower.startsWith(entry.toLowerCase())) return entry;
+      if ((aliases[entry] ?? []).any(lower.contains)) return entry;
+    }
     return 'Autres';
   }
   IconData zoneIcon(String zone) => switch (zone) {
@@ -106,7 +191,7 @@ class _HomeState extends State<Home> {
   Widget zoneBoard() {
     final all = files.cast<Map<String,dynamic>>();
     return Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-      const Text('Plan des zones', style:TextStyle(fontSize:18,fontWeight:FontWeight.w800)),
+      Row(children:[const Expanded(child: Text('Plan des zones', style:TextStyle(fontSize:18,fontWeight:FontWeight.w800))),IconButton(tooltip:'Personnaliser les zones',onPressed:editLocations,icon:const Icon(Icons.tune))]),
       const SizedBox(height:5),
       const Text('Touchez une zone pour afficher ses dossiers.',style:TextStyle(fontSize:12)),
       const SizedBox(height:10),
@@ -147,7 +232,7 @@ class _HomeState extends State<Home> {
   void initState() { super.initState(); init(); }
   @override
   void dispose() { _searchTimer?.cancel(); search.dispose(); super.dispose(); }
-  Future<void> init() async { await api.load(); await refresh(); }
+  Future<void> init() async { await api.load(); await loadZoneLocations(); await refresh(); }
   Future<void> refresh() async {
     if (!mounted) return;
     setState(() {busy=true; error='';});
