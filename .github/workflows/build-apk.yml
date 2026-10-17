@@ -4,11 +4,9 @@ on:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 concurrency:
-  group: ilot-peinture-pages
+  group: ilot-peinture-publication
   cancel-in-progress: false
 jobs:
   build:
@@ -24,42 +22,39 @@ jobs:
         run: flutter pub get
       - name: Allow server HTTP inside private network
         run: |
-          python3 - <<'PY'
+          python3 - <<'PYTHON'
           from pathlib import Path
           p=Path('android/app/src/main/AndroidManifest.xml')
           s=p.read_text().replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">','<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET"/>')
           s=s.replace('<application','<application android:usesCleartextTraffic="true"')
           p.write_text(s)
-          PY
+          PYTHON
       - name: Analyze
         run: flutter analyze lib
       - name: Test
         run: flutter test
       - name: Build
         run: flutter build apk --release
-      - name: Upload downloadable APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ilot-peinture-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-      - name: Prepare website with latest APK
+      - name: Publish APK in a stable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p public/downloads
+          cp build/app/outputs/flutter-apk/app-release.apk ilot-peinture.apk
+          if gh release view test-latest >/dev/null 2>&1; then
+            gh release upload test-latest ilot-peinture.apk --clobber
+          else
+            gh release create test-latest ilot-peinture.apk --title "Îlot Peinture - version d'essai" --notes "APK Android de test. Installation réservée aux personnes autorisées. Utiliser des données fictives." --latest
+          fi
+      - name: Prepare GitHub Pages website
+        run: |
+          mkdir -p public
           cp site/index.html public/index.html
-          cp build/app/outputs/flutter-apk/app-release.apk public/downloads/ilot-peinture.apk
           sed -i "s/__BUILD__/${GITHUB_RUN_NUMBER}/g" public/index.html
           touch public/.nojekyll
-      - name: Upload website
-        uses: actions/upload-pages-artifact@v3
+      - name: Publish site to gh-pages without Actions artifacts
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: public
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
+          force_orphan: true
