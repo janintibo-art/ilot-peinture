@@ -1,9 +1,5 @@
-.dart_tool/
-.flutter-plugins*
-.packages
-build/
-android/.gradle/
-android/local.properties
-server/__pycache__/
-server/data/
-*.db
+server/.env
+server/*.db
+server/*.db-*
+server/backups/
+*.sqlite3
