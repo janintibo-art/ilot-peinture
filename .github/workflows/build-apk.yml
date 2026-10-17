@@ -57,6 +57,8 @@ jobs:
           cp site/index.html public/index.html
           cp site/guide-vmware.html public/guide-vmware.html
           cp DOC_VMWARE_V12.md public/DOC_VMWARE_V12.md
+          cp TRACABILITE_V14.md public/TRACABILITE_V14.md
+          cp site/guide-tracabilite.html public/guide-tracabilite.html
           cp assets/logo.png public/logo.png
           cp assets/icon.png public/icon.png
           sed -i "s/__BUILD__/${GITHUB_RUN_NUMBER}/g" public/index.html
