@@ -69,6 +69,7 @@ class _HomeState extends State<Home> {
   final api = Api();
   int page = 0;
   bool busy = false;
+  String selectedZone = 'Toutes';
   String error = '';
   List<dynamic> products = [], files = [];
   final search = TextEditingController();
@@ -84,6 +85,62 @@ class _HomeState extends State<Home> {
     Wrap(spacing:6,runSpacing:4,children:suggestedLocations.map((loc)=>ActionChip(label:Text(loc,style:const TextStyle(fontSize:11)),onPressed:(){ controller.text=loc; controller.selection=TextSelection.collapsed(offset:controller.text.length); })).toList()),
     const SizedBox(height:12),
   ]);
+  static const zones = ['Toutes', 'Réception', 'Racks', 'Peinture', 'Contrôle', 'Expédition', 'Autres'];
+  String zoneOf(Object? raw) {
+    final value = (raw ?? '').toString().toLowerCase();
+    if (value.contains('réception') || value.contains('reception')) return 'Réception';
+    if (value.contains('rack') || value.contains('étagère') || value.contains('etagere')) return 'Racks';
+    if (value.contains('peinture') || value.contains('chariot')) return 'Peinture';
+    if (value.contains('contrôle') || value.contains('controle')) return 'Contrôle';
+    if (value.contains('expédition') || value.contains('expedition')) return 'Expédition';
+    return 'Autres';
+  }
+  IconData zoneIcon(String zone) => switch (zone) {
+    'Réception' => Icons.move_to_inbox_outlined,
+    'Racks' => Icons.shelves,
+    'Peinture' => Icons.format_paint_outlined,
+    'Contrôle' => Icons.fact_check_outlined,
+    'Expédition' => Icons.local_shipping_outlined,
+    _ => Icons.place_outlined,
+  };
+  Widget zoneBoard() {
+    final all = files.cast<Map<String,dynamic>>();
+    return Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      const Text('Plan des zones', style:TextStyle(fontSize:18,fontWeight:FontWeight.w800)),
+      const SizedBox(height:5),
+      const Text('Touchez une zone pour afficher ses dossiers.',style:TextStyle(fontSize:12)),
+      const SizedBox(height:10),
+      LayoutBuilder(builder:(context, constraints) {
+        final width = (constraints.maxWidth - 10) / 2;
+        return Wrap(spacing:10,runSpacing:10,children:zones.where((z)=>z!='Toutes').map((zone) {
+          final count=all.where((file)=>zoneOf(file['location'])==zone).length;
+          final active=selectedZone==zone;
+          return SizedBox(width:width,child:Material(color:active?const Color(0xffd3efea):Colors.white,borderRadius:BorderRadius.circular(16),child:InkWell(borderRadius:BorderRadius.circular(16),onTap:()=>setState(()=>selectedZone=active?'Toutes':zone),child:Padding(padding:const EdgeInsets.all(12),child:Row(children:[Icon(zoneIcon(zone),color:const Color(0xff007d87)),const SizedBox(width:9),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(zone,style:const TextStyle(fontWeight:FontWeight.w700,fontSize:12),overflow:TextOverflow.ellipsis),Text('$count dossier(s)',style:const TextStyle(fontSize:11))]))])))));
+        }).toList());
+      }),
+      if(selectedZone!='Toutes') Padding(padding:const EdgeInsets.only(top:8,bottom:5),child:ActionChip(avatar:const Icon(Icons.close,size:17),label:Text('Filtre : $selectedZone'),onPressed:()=>setState(()=>selectedZone='Toutes'))),
+    ]);
+  }
+  Future<void> quickMove(Map<String,dynamic> item) async {
+    final controller=TextEditingController(text:(item['location']??'').toString());
+    await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(
+      title:Text('Déplacer ${item['reference']}'),
+      content:SizedBox(width:440,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text('Emplacement actuel : ${item['location']}',style:const TextStyle(fontSize:12)),
+        const SizedBox(height:12),locationPicker(controller),
+      ]))),
+      actions:[TextButton(onPressed:()=>Navigator.pop(dialog),child:const Text('Annuler')),
+        FilledButton.icon(icon:const Icon(Icons.check),label:const Text('Déplacer'),onPressed:() async {
+          final destination=controller.text.trim();
+          if(destination.isEmpty) {message('Choisissez un emplacement.');return;}
+          if(destination==(item['location']??'').toString()) {Navigator.pop(dialog);return;}
+          await execute(() async {await api.request('PUT','/files/${item['id']}',{
+            'reference':item['reference'],'client':item['client'],'location':destination,
+            'status':item['status'],'notes':item['notes']??'',
+          });});
+        })]));
+    controller.dispose();
+  }
   final categories = ['Liquide','Poudre','Solvant','Autre'];
   final statuses = ['Reçu','En attente','En peinture','Terminé','Expédié'];
   @override
@@ -111,6 +168,7 @@ class _HomeState extends State<Home> {
     await prefs.setBool('demo_mode',enabled);
     api.demo=enabled;
     search.clear();
+    setState(()=>selectedZone='Toutes');
     await refresh();
   }
   Future<void> resetDemo() async {
@@ -219,7 +277,9 @@ class _HomeState extends State<Home> {
         if(page==2) ...[
           const Text('Suivi des dossiers',style:TextStyle(fontSize:23,fontWeight:FontWeight.bold)),const SizedBox(height:8),
           TextField(controller:search,onChanged:onSearchChanged,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:'Client, numéro de dossier, emplacement',suffixIcon:IconButton(onPressed:(){search.clear();refresh();},icon:const Icon(Icons.clear)))),const SizedBox(height:14),
-          for(final item in files.cast<Map<String,dynamic>>()) Card(child:Padding(padding:const EdgeInsets.symmetric(vertical:5),child:ListTile(leading:const CircleAvatar(backgroundColor:Color(0xffe3f1f2),child:Icon(Icons.folder_outlined,color:Color(0xff007d87))),title:Text('${item['reference']} • ${item['client']}',style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const SizedBox(height:7),Text('📍 ${item['location']}',style:const TextStyle(fontWeight:FontWeight.w700,color:Color(0xff007d87))),const SizedBox(height:3),Text('Statut : ${item['status']}'),if((item['notes']??'').toString().isNotEmpty) Text(item['notes'].toString(),maxLines:2,overflow:TextOverflow.ellipsis)]),trailing:IconButton(tooltip:'Historique du dossier',icon:const Icon(Icons.history),onPressed:()=>showHistory(item['reference'].toString(),'/files/${item['id']}/history',false)),onTap:()=>fileEditor(item)))),
+          zoneBoard(),const SizedBox(height:16),
+          Text(selectedZone=='Toutes'?'Tous les dossiers':'Dossiers : $selectedZone',style:const TextStyle(fontSize:17,fontWeight:FontWeight.w700)),const SizedBox(height:8),
+          for(final item in files.cast<Map<String,dynamic>>().where((item)=>selectedZone=='Toutes'||zoneOf(item['location'])==selectedZone)) Card(child:Padding(padding:const EdgeInsets.symmetric(vertical:5),child:ListTile(leading:const CircleAvatar(backgroundColor:Color(0xffe3f1f2),child:Icon(Icons.folder_outlined,color:Color(0xff007d87))),title:Text('${item['reference']} • ${item['client']}',style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const SizedBox(height:7),Text('📍 ${item['location']}',style:const TextStyle(fontWeight:FontWeight.w700,color:Color(0xff007d87))),const SizedBox(height:3),Text('Statut : ${item['status']}'),if((item['notes']??'').toString().isNotEmpty) Text(item['notes'].toString(),maxLines:2,overflow:TextOverflow.ellipsis)]),trailing:PopupMenuButton<String>(tooltip:'Actions du dossier',onSelected:(action){if(action=='move'){quickMove(item);}else if(action=='history'){showHistory(item['reference'].toString(),'/files/${item['id']}/history',false);}else{fileEditor(item);}},itemBuilder:(context)=>const [PopupMenuItem(value:'move',child:Text('Déplacer')),PopupMenuItem(value:'history',child:Text('Historique')),PopupMenuItem(value:'edit',child:Text('Modifier'))]),onTap:()=>fileEditor(item)))),
           if(files.isEmpty && !busy) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.folder_open_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun dossier trouvé'),Text('Essayez une autre recherche ou créez un dossier.',textAlign:TextAlign.center)])))
         ],
         const SizedBox(height:80)
