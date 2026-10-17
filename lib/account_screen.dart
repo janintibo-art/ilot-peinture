@@ -99,6 +99,6 @@ class _AccountScreenState extends State<AccountScreen> {
       if (busy) const LinearProgressIndicator(),
       if (error.isNotEmpty) Padding(padding:const EdgeInsets.all(12),child:Text(error,style:const TextStyle(color:Colors.red))),
       const SizedBox(height:12),
-      const Text('Version pilote : cette connexion ne constitue pas une signature qualité. La clé commune historique reste utilisable pour certaines actions et le journal métier doit encore être renforcé.',style:TextStyle(color:Color(0xff5b6e75))),
+      const Text('Version pilote : cette connexion ne constitue pas une signature qualité. Les opérations d’écriture exigent désormais une session personnelle. Le journal doit encore être rendu transactionnel et audité.',style:TextStyle(color:Color(0xff5b6e75))),
     ])));
 }

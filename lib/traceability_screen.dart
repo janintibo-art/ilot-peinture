@@ -82,7 +82,7 @@ class _TraceabilityScreenState extends State<TraceabilityScreen> {
         final lot=selected(allowed,lotId)!;
         final liquid=lot['category']=='Liquide';
         return AlertDialog(title:const Text('Enregistrer une opération'),content:SizedBox(width:480,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-          const Text('Registre pilote : numéro opérateur déclaratif, sans validation d’identité ni signature.',style:TextStyle(fontSize:12)),
+          const Text('Identité imposée par la session serveur en V23 ; ceci ne constitue pas une signature qualité.',style:TextStyle(fontSize:12)),
           const SizedBox(height:12),
           DropdownButtonFormField<int>(initialValue:fileId,isExpanded:true,decoration:decoration('Dossier'),items:widget.files.map((f)=>DropdownMenuItem<int>(value:f['id'] as int,child:Text('${f['reference']} — ${f['client']}',overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)=>update(()=>fileId=v)),
           const SizedBox(height:12),

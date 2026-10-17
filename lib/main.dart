@@ -31,9 +31,11 @@ class Api {
   }
   Future<dynamic> request(String method, String endpoint, [Map<String, dynamic>? data]) async {
     if (demo) return demoStore.request(method, endpoint, data);
-    if (url.isEmpty || token.isEmpty) throw Exception('Configurez le serveur dans Réglages.');
+    if (url.isEmpty) throw Exception('Configurez le serveur dans Réglages.');
+    if (method != 'GET' && personalToken.isEmpty) throw Exception('Connectez-vous avec votre compte professionnel pour cette action.');
+    if (method == 'GET' && personalToken.isEmpty && token.isEmpty) throw Exception('Connexion au serveur requise.');
     final uri = Uri.parse('$url$endpoint');
-    final headers = {'Authorization': 'Bearer ${personalToken.isEmpty ? token : personalToken}', 'Content-Type': 'application/json'};
+    final headers = {'Authorization': 'Bearer ${personalToken.isNotEmpty ? personalToken : token}', 'Content-Type': 'application/json'};
     late http.Response response;
     try {
       if (method == 'GET') {

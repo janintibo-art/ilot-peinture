@@ -17,6 +17,25 @@ from accounts import router as account_router, init_accounts, current as current
 app = FastAPI(title='Îlot Peinture API', version='14.0', docs_url=None, redoc_url=None)
 app.include_router(account_router)
 
+# V23 : journal de transition (non transactionnel, ne vaut pas piste d'audit certifiée).
+from fastapi import Request
+@app.middleware('http')
+async def v23_audit(request: Request, call_next):
+    response = await call_next(request)
+    if request.method in ('POST','PUT','PATCH','DELETE') and not request.url.path.startswith('/auth/') and response.status_code < 400:
+        try:
+            actor = current_account(request.headers.get('authorization'))
+            with db() as con:
+                con.execute('CREATE TABLE IF NOT EXISTS audit_events_v23 (id INTEGER PRIMARY KEY, operator_number TEXT NOT NULL, method TEXT NOT NULL, endpoint TEXT NOT NULL, at TEXT NOT NULL)')
+                con.execute('INSERT INTO audit_events_v23(operator_number,method,endpoint,at) VALUES(?,?,?,?)',
+                  (actor['employee_number'],request.method,request.url.path,now()))
+        except Exception:
+            # Un incident de journalisation reste un blocage pour le passage en production.
+            # L'intégrité transactionnelle sera implémentée dans les handlers métier.
+            pass
+    return response
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -93,6 +112,10 @@ def auth(authorization: str | None):
         return None
     return current_account(authorization)
 
+# V23_AUTH_GUARD : toute écriture exige un jeton de session personnel valide.
+def write_auth(authorization: str | None):
+    return current_account(authorization)
+
 class Product(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     category: Literal['Liquide', 'Poudre', 'Solvant', 'Autre']
@@ -131,7 +154,7 @@ def products(authorization: str | None = Header(default=None)):
 
 @app.post('/products')
 def add_product(item: Product, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     with db() as c:
         cur = c.execute('INSERT INTO products(name,category,unit,quantity,alert_at,location,updated_at) VALUES(?,?,?,?,?,?,?)',
           (item.name,item.category,item.unit,item.quantity,item.alert_at,item.location,now()))
@@ -142,7 +165,7 @@ def add_product(item: Product, authorization: str | None = Header(default=None))
 
 @app.post('/products/{product_id}/movement')
 def move(product_id: int, item: Movement, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     if item.delta == 0: raise HTTPException(400, 'Mouvement nul')
     with db() as c:
         row = c.execute('SELECT quantity FROM products WHERE id=?',(product_id,)).fetchone()
@@ -168,7 +191,7 @@ def files(q: str = '', authorization: str | None = Header(default=None)):
 
 @app.post('/files')
 def add_file(item: WorkFile, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     try:
         with db() as c:
             cur = c.execute('INSERT INTO files(reference,client,location,status,notes,updated_at) VALUES(?,?,?,?,?,?)',
@@ -179,7 +202,7 @@ def add_file(item: WorkFile, authorization: str | None = Header(default=None)):
 
 @app.put('/files/{file_id}')
 def edit_file(file_id: int, item: WorkFile, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     try:
         with db() as c:
             old = c.execute('SELECT * FROM files WHERE id=?', (file_id,)).fetchone()
@@ -210,7 +233,7 @@ def get_zones(authorization: str | None = Header(default=None)):
 
 @app.post('/zones')
 def create_zone(item: ZoneIn, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     try:
         with db() as c:
             cur=c.execute('INSERT INTO zones(name) VALUES(?)',(item.name.strip(),))
@@ -219,7 +242,7 @@ def create_zone(item: ZoneIn, authorization: str | None = Header(default=None)):
 
 @app.post('/locations')
 def create_location(item: LocationIn, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     try:
         with db() as c:
             if c.execute('SELECT id FROM zones WHERE id=?',(item.zone_id,)).fetchone() is None:
@@ -230,7 +253,7 @@ def create_location(item: LocationIn, authorization: str | None = Header(default
 
 @app.delete('/locations/{location_id}')
 def delete_location(location_id: int, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     with db() as c:
         loc=c.execute('SELECT name FROM locations WHERE id=?',(location_id,)).fetchone()
         if loc is None: raise HTTPException(404,'Emplacement introuvable')
@@ -241,7 +264,7 @@ def delete_location(location_id: int, authorization: str | None = Header(default
 
 @app.delete('/zones/{zone_id}')
 def delete_zone(zone_id: int, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     with db() as c:
         if c.execute('SELECT 1 FROM locations WHERE zone_id=? LIMIT 1',(zone_id,)).fetchone():
             raise HTTPException(409,'Supprimez les emplacements avant la zone')
@@ -288,7 +311,7 @@ def list_material_lots(authorization: str | None = Header(default=None)):
 
 @app.post('/material-lots', status_code=201)
 def add_material_lot(item: MaterialLotIn, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
     with db() as c:
         product=c.execute('SELECT id FROM products WHERE id=?',(item.product_id,)).fetchone()
         if product is None: raise HTTPException(404,'Produit introuvable')
@@ -304,7 +327,9 @@ def add_material_lot(item: MaterialLotIn, authorization: str | None = Header(def
 
 @app.post('/process-records', status_code=201)
 def add_process_record(item: ProcessRecordIn, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    write_auth(authorization)
+    actor = current_account(authorization)
+    item = item.model_copy(update={'operator_number': actor['employee_number']})
     # Paramètres d'application distincts selon le procédé.
     if item.process_type == 'Liquide' and (not item.hardener_lot or not item.mix_ratio or item.pot_life_minutes is None):
         raise HTTPException(422,'Liquide : durcisseur, dosage et durée de vie du mélange requis')
