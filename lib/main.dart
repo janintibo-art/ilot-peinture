@@ -55,7 +55,7 @@ class IlotApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Îlot Peinture', debugShowCheckedModeBanner: false,
     theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff007d87)),
-      scaffoldBackgroundColor: const Color(0xfff2f6f7), cardTheme: CardThemeData(elevation:0, color:Colors.white,shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(18))), inputDecorationTheme: InputDecorationTheme(filled:true,fillColor:Colors.white,border:OutlineInputBorder(borderRadius:BorderRadius.circular(14)))),
+      scaffoldBackgroundColor: const Color(0xffeaf1f4), cardTheme: CardThemeData(elevation:3,shadowColor:const Color(0x33093b4a),color:Colors.white,shape:RoundedRectangleBorder(side:const BorderSide(color:Color(0xffd7e7ea)),borderRadius:BorderRadius.circular(20))), inputDecorationTheme: InputDecorationTheme(filled:true,fillColor:Colors.white,border:OutlineInputBorder(borderRadius:BorderRadius.circular(14)))),
     home: const Home(),
   );
 }
@@ -337,7 +337,7 @@ class _HomeState extends State<Home> {
   Widget build(BuildContext context) {
     final alerts = products.where((p)=>(p['quantity'] as num).toDouble()<=(p['alert_at'] as num).toDouble()).length;
     return Scaffold(appBar:AppBar(title:Row(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/icon.png',width:36,height:36),const SizedBox(width:8),const Flexible(child:Text('Îlot Peinture',overflow:TextOverflow.ellipsis,style:TextStyle(fontWeight:FontWeight.w800,fontSize:20)))]),actions:[if(employeeNumber.isNotEmpty) Center(child:Padding(padding:const EdgeInsets.only(right:4),child:Text('N° $employeeNumber',style:const TextStyle(fontSize:12,fontWeight:FontWeight.w700)))),IconButton(tooltip:'Actualiser',onPressed:refresh,icon:const Icon(Icons.refresh)),IconButton(tooltip:'Serveur',onPressed:settings,icon:const Icon(Icons.settings_outlined))]),
-      bottomNavigationBar:NavigationBar(selectedIndex:page,onDestinationSelected:(v)=>setState(()=>page=v),destinations:const [NavigationDestination(icon:Icon(Icons.dashboard_outlined),label:'Accueil'),NavigationDestination(icon:Icon(Icons.inventory_2_outlined),label:'Stocks'),NavigationDestination(icon:Icon(Icons.folder_copy_outlined),label:'Dossiers')]),
+      bottomNavigationBar:NavigationBar(height:72,indicatorColor:const Color(0xffc6eeea),backgroundColor:const Color(0xfff8fcfd),selectedIndex:page,onDestinationSelected:(v)=>setState(()=>page=v),destinations:const [NavigationDestination(icon:Icon(Icons.dashboard_outlined),label:'Accueil'),NavigationDestination(icon:Icon(Icons.inventory_2_outlined),label:'Stocks'),NavigationDestination(icon:Icon(Icons.folder_copy_outlined),label:'Dossiers')]),
       floatingActionButton:page==0?null:FloatingActionButton.extended(onPressed:page==1?productEditor:()=>fileEditor(),icon:const Icon(Icons.add),label:Text(page==1?'Produit':'Dossier')),
       body:RefreshIndicator(onRefresh:refresh,child:ListView(padding:const EdgeInsets.symmetric(horizontal:16,vertical:14),children:[
         Card(color:api.demo?const Color(0xffe3f7ed):const Color(0xffe9f2f5),child:Padding(padding:const EdgeInsets.symmetric(horizontal:14,vertical:8),child:Row(children:[Icon(api.demo?Icons.science_outlined:Icons.dns_outlined,color:const Color(0xff007d87)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Mode démonstration',style:TextStyle(fontWeight:FontWeight.w700)),Text(api.demo?'ACTIF • Données fictives sur cet appareil':'Désactivé • Mode serveur Linux/NAS',style:const TextStyle(fontSize:11))])),Switch(value:api.demo,onChanged:(v)=>changeDemo(v))]))),
@@ -347,13 +347,13 @@ class _HomeState extends State<Home> {
         if(page==0) ...[
           Container(padding:const EdgeInsets.all(16),decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xff073d4b),Color(0xff087d85)]),borderRadius:BorderRadius.circular(24)),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('TABLEAU DE BORD',style:TextStyle(color:Color(0xff9ce9e3),fontWeight:FontWeight.bold,letterSpacing:2,fontSize:11)),SizedBox(height:8),Text('Votre atelier, en un coup d’œil',style:TextStyle(fontSize:21,fontWeight:FontWeight.w800,color:Colors.white)),SizedBox(height:5),Text('Stocks, commandes et emplacements réunis au même endroit.',style:TextStyle(color:Color(0xffd6eeef)))])),const SizedBox(height:18),
           LayoutBuilder(builder:(context,constraints)=>Wrap(spacing:10,runSpacing:10,children:[metric('Produits','${products.length}',Icons.inventory_2,width:(constraints.maxWidth-10)/2),metric('Alertes stock','$alerts',Icons.warning_amber,width:(constraints.maxWidth-10)/2),metric('Dossiers','${files.length}',Icons.folder_open,width:(constraints.maxWidth-10)/2),metric('À traiter','${files.where((f)=>f['status']!='Terminé' && f['status']!='Expédié').length}',Icons.pending_actions,width:(constraints.maxWidth-10)/2)])),
-          const SizedBox(height:18),const Text('Accès rapide',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),
-          Card(child:ListTile(leading:const Icon(Icons.search),title:const Text('Retrouver une commande'),subtitle:const Text('Par client, numéro ou emplacement'),trailing:const Icon(Icons.arrow_forward),onTap:()=>setState(()=>page=2))),
-          Card(child:ListTile(leading:const Icon(Icons.add_box_outlined),title:const Text('Enregistrer une livraison de peinture'),trailing:const Icon(Icons.arrow_forward),onTap:()=>setState(()=>page=1))),
+          const SizedBox(height:18),const Text('Accès rapide',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800,color:Color(0xff103d4b))),
+          Card(child:ListTile(leading:const CircleAvatar(backgroundColor:Color(0xffdbf4f1),child:Icon(Icons.search,color:Color(0xff007d87))),title:const Text('Retrouver une commande'),subtitle:const Text('Par client, numéro ou emplacement'),trailing:const Icon(Icons.arrow_forward),onTap:()=>setState(()=>page=2))),
+          Card(child:ListTile(leading:const CircleAvatar(backgroundColor:Color(0xffdbf4f1),child:Icon(Icons.add_box_outlined,color:Color(0xff007d87))),title:const Text('Enregistrer une livraison de peinture'),trailing:const Icon(Icons.arrow_forward),onTap:()=>setState(()=>page=1))),
           if(alerts>0) Card(child:ListTile(leading:const Icon(Icons.warning_amber,color:Colors.deepOrange),title:Text('$alerts produit(s) à surveiller'),onTap:()=>setState(()=>page=1)))
         ],
         if(page==1) ...[
-          const Text('Stocks & consommables',style:TextStyle(fontSize:23,fontWeight:FontWeight.bold)),const SizedBox(height:8),
+          const Text('Stocks & consommables',style:TextStyle(fontSize:23,fontWeight:FontWeight.w800,color:Color(0xff103d4b))),const SizedBox(height:8),
           const Text('Peintures liquides, poudres, solvants et autres produits.'),const SizedBox(height:12),
           for(final item in products.cast<Map<String,dynamic>>()) Card(child:ListTile(
             leading:CircleAvatar(child:Icon(item['category']=='Poudre'?Icons.grain:item['category']=='Solvant'?Icons.science:Icons.opacity)),
@@ -363,7 +363,7 @@ class _HomeState extends State<Home> {
           if(products.isEmpty && !busy) const Card(child:Padding(padding:EdgeInsets.all(24),child:Column(children:[Icon(Icons.inventory_2_outlined,size:44,color:Color(0xff007d87)),SizedBox(height:12),Text('Aucun produit enregistré'),Text('Ajoutez un produit ou activez la démonstration.',textAlign:TextAlign.center)])))
         ],
         if(page==2) ...[
-          const Text('Suivi des dossiers',style:TextStyle(fontSize:23,fontWeight:FontWeight.bold)),const SizedBox(height:8),
+          const Text('Suivi des dossiers',style:TextStyle(fontSize:23,fontWeight:FontWeight.w800,color:Color(0xff103d4b))),const SizedBox(height:8),
           TextField(controller:search,onChanged:onSearchChanged,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:'Client, numéro de dossier, emplacement',suffixIcon:IconButton(onPressed:(){search.clear();refresh();},icon:const Icon(Icons.clear)))),const SizedBox(height:14),
           zoneBoard(),const SizedBox(height:16),
           Text(selectedZone=='Toutes'?'Tous les dossiers':'Dossiers : $selectedZone',style:const TextStyle(fontSize:17,fontWeight:FontWeight.w700)),const SizedBox(height:8),
@@ -373,5 +373,5 @@ class _HomeState extends State<Home> {
         const SizedBox(height:80)
       ])));
   }
-  Widget metric(String label,String value,IconData icon,{double width=145})=>SizedBox(width:width,height:112,child:Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(icon,color:const Color(0xff007d87)),const Spacer(),Text(value,style:const TextStyle(fontSize:27,fontWeight:FontWeight.w800)),Text(label,style:const TextStyle(fontSize:12))]))));
+  Widget metric(String label,String value,IconData icon,{double width=145})=>SizedBox(width:width,height:126,child:Card(child:Padding(padding:const EdgeInsets.all(13),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Container(padding:const EdgeInsets.all(7),decoration:BoxDecoration(color:const Color(0xffdbf4f1),borderRadius:BorderRadius.circular(11)),child:Icon(icon,color:const Color(0xff007d87),size:20)),const Spacer(),Text(value,style:const TextStyle(fontSize:28,fontWeight:FontWeight.w900,color:Color(0xff103d4b))),Text(label,style:const TextStyle(fontSize:12,fontWeight:FontWeight.w600))]))));
 }
