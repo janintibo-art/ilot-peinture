@@ -46,3 +46,8 @@ Le site public est dans `site/index.html`. Chaque workflow réussi copie l'APK d
 **Activation une seule fois** : sur GitHub, dépôt → Settings → Pages → Build and deployment → Source : **GitHub Actions**. Sur un dépôt privé, l'accès GitHub Pages dépend du plan/visibilité et de la politique de l'organisation. Pour permettre un accès sans compte GitHub, vérifier que le site est effectivement public. Ne jamais placer les clés, les URL serveur privées ni les données clients dans les fichiers du site ou dans un dépôt public.
 
 En cas d'échec de `flutter test` ou du build Android, la publication est interrompue et le dernier APK publié est conservé. **Chaque nouveau build vert** met à jour l'APK du site : les collègues doivent télécharger de nouveau la dernière version pour la tester.
+
+
+## V13 — guide VMware et numéro professionnel
+
+Le site GitHub Pages publie le guide `DOC_VMWARE_V12.md` en téléchargement et sa lecture dans `guide-vmware.html`. Dans les réglages Android, chaque personne peut enregistrer son numéro professionnel (exemple : 128). **Ce numéro est conservé localement sur le téléphone : il ne constitue pas un login, ne sécurise pas les accès et n’est pas encore lié à l’audit serveur.** La création de vrais comptes, des permissions, d’une preuve d’identité et de l’audit nominatif est à réaliser avant usage en production.

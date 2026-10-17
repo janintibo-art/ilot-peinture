@@ -71,6 +71,7 @@ class _HomeState extends State<Home> {
   bool busy = false;
   String selectedZone = 'Toutes';
   String error = '';
+  String employeeNumber = ''; // Identifiant d'affichage local, pas une authentification
   List<dynamic> products = [], files = [];
   final search = TextEditingController();
   Timer? _searchTimer;
@@ -232,7 +233,7 @@ class _HomeState extends State<Home> {
   void initState() { super.initState(); init(); }
   @override
   void dispose() { _searchTimer?.cancel(); search.dispose(); super.dispose(); }
-  Future<void> init() async { await api.load(); await loadZoneLocations(); await refresh(); }
+  Future<void> init() async { await api.load(); await loadZoneLocations(); final prefs=await SharedPreferences.getInstance(); employeeNumber=prefs.getString('employee_number_v13')??''; await refresh(); }
   Future<void> refresh() async {
     if (!mounted) return;
     setState(() {busy=true; error='';});
@@ -262,18 +263,20 @@ class _HomeState extends State<Home> {
     if (yes == true) { await DemoStore.reset(); await refresh(); }
   }
   Future<void> settings() async {
-    final server = TextEditingController(text: api.url), key = TextEditingController(text: api.token);
-    await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(title:const Text('Connexion au serveur'),content:SizedBox(width:420,child:Column(mainAxisSize:MainAxisSize.min,children:[
-      field(server,'Adresse (ex. http://192.168.1.10:8000)'),field(key,'Clé d’accès'),
+    final server = TextEditingController(text: api.url), key = TextEditingController(text: api.token), employee = TextEditingController(text: employeeNumber);
+    await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(title:const Text('Connexion au serveur'),content:SizedBox(width:420,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+      field(employee,'Numéro professionnel (ex. 128)',keyboard:TextInputType.number),
+      const Text('Numéro affiché sur cet appareil uniquement. Ce n’est pas encore un compte sécurisé ni une preuve d’identité.',style:TextStyle(fontSize:12)),
+      const SizedBox(height:12),field(server,'Adresse (ex. http://192.168.1.10:8000)'),field(key,'Clé d’accès'),
       const Text('Exemple : http://192.168.1.10:8000 (réseau interne). Ne partagez jamais la clé sur GitHub.',style:TextStyle(fontSize:12)),
       const SizedBox(height:8),OutlinedButton.icon(onPressed:() async {
         final temp=Api()..url=server.text.trim().replaceAll(RegExp(r'/$'),'')..token=key.text.trim();
         try { await temp.request('GET','/health'); if(dialog.mounted) ScaffoldMessenger.of(dialog).showSnackBar(const SnackBar(content:Text('Connexion réussie au serveur'))); }
         catch(e) { if(dialog.mounted) ScaffoldMessenger.of(dialog).showSnackBar(SnackBar(content:Text('Échec : ${e.toString().replaceFirst('Exception: ','')}'))); }
-      },icon:const Icon(Icons.wifi_tethering),label:const Text('Tester la connexion'))])),actions:[
+      },icon:const Icon(Icons.wifi_tethering),label:const Text('Tester la connexion'))]))),actions:[
       TextButton(onPressed:()=>Navigator.pop(dialog),child:const Text('Annuler')),
-      FilledButton(onPressed:() async {await api.save(server.text,key.text); if(dialog.mounted) Navigator.pop(dialog); await refresh();},child:const Text('Enregistrer'))]));
-    server.dispose(); key.dispose();
+      FilledButton(onPressed:() async {final number=employee.text.trim(); if(number.isNotEmpty && !RegExp(r'^\d{1,8}$').hasMatch(number)){message('Le numéro doit contenir 1 à 8 chiffres.');return;} final prefs=await SharedPreferences.getInstance(); await prefs.setString('employee_number_v13',number); employeeNumber=number; await api.save(server.text,key.text); if(dialog.mounted) Navigator.pop(dialog); await refresh();},child:const Text('Enregistrer'))]));
+    server.dispose(); key.dispose(); employee.dispose();
   }
   Future<void> productEditor() async {
     final name=TextEditingController(), amount=TextEditingController(text:'0'), alert=TextEditingController(text:'0'), location=TextEditingController();
@@ -333,7 +336,7 @@ class _HomeState extends State<Home> {
   @override
   Widget build(BuildContext context) {
     final alerts = products.where((p)=>(p['quantity'] as num).toDouble()<=(p['alert_at'] as num).toDouble()).length;
-    return Scaffold(appBar:AppBar(title:Row(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/icon.png',width:36,height:36),const SizedBox(width:8),const Flexible(child:Text('Îlot Peinture',overflow:TextOverflow.ellipsis,style:TextStyle(fontWeight:FontWeight.w800,fontSize:20)))]),actions:[IconButton(tooltip:'Actualiser',onPressed:refresh,icon:const Icon(Icons.refresh)),IconButton(tooltip:'Serveur',onPressed:settings,icon:const Icon(Icons.settings_outlined))]),
+    return Scaffold(appBar:AppBar(title:Row(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/icon.png',width:36,height:36),const SizedBox(width:8),const Flexible(child:Text('Îlot Peinture',overflow:TextOverflow.ellipsis,style:TextStyle(fontWeight:FontWeight.w800,fontSize:20)))]),actions:[if(employeeNumber.isNotEmpty) Center(child:Padding(padding:const EdgeInsets.only(right:4),child:Text('N° $employeeNumber',style:const TextStyle(fontSize:12,fontWeight:FontWeight.w700)))),IconButton(tooltip:'Actualiser',onPressed:refresh,icon:const Icon(Icons.refresh)),IconButton(tooltip:'Serveur',onPressed:settings,icon:const Icon(Icons.settings_outlined))]),
       bottomNavigationBar:NavigationBar(selectedIndex:page,onDestinationSelected:(v)=>setState(()=>page=v),destinations:const [NavigationDestination(icon:Icon(Icons.dashboard_outlined),label:'Accueil'),NavigationDestination(icon:Icon(Icons.inventory_2_outlined),label:'Stocks'),NavigationDestination(icon:Icon(Icons.folder_copy_outlined),label:'Dossiers')]),
       floatingActionButton:page==0?null:FloatingActionButton.extended(onPressed:page==1?productEditor:()=>fileEditor(),icon:const Icon(Icons.add),label:Text(page==1?'Produit':'Dossier')),
       body:RefreshIndicator(onRefresh:refresh,child:ListView(padding:const EdgeInsets.symmetric(horizontal:16,vertical:14),children:[
