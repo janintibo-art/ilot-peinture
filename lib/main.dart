@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'demo_store.dart';
+import 'account_screen.dart';
 import 'traceability_screen.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +13,8 @@ class Api {
   String url = '';
   String token = '';
   bool demo = false;
+  String personalToken = '';
+  String personalRole = '';
   final demoStore = DemoStore();
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
@@ -30,7 +33,7 @@ class Api {
     if (demo) return demoStore.request(method, endpoint, data);
     if (url.isEmpty || token.isEmpty) throw Exception('Configurez le serveur dans Réglages.');
     final uri = Uri.parse('$url$endpoint');
-    final headers = {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
+    final headers = {'Authorization': 'Bearer ${personalToken.isEmpty ? token : personalToken}', 'Content-Type': 'application/json'};
     late http.Response response;
     try {
       if (method == 'GET') {
@@ -263,6 +266,19 @@ class _HomeState extends State<Home> {
     final yes = await showDialog<bool>(context:context,builder:(dialog)=>AlertDialog(title:const Text('Réinitialiser la démonstration ?'),content:const Text('Les modifications des données fictives seront effacées. Aucune donnée du serveur ne sera touchée.'),actions:[TextButton(onPressed:()=>Navigator.pop(dialog,false),child:const Text('Annuler')),FilledButton(onPressed:()=>Navigator.pop(dialog,true),child:const Text('Réinitialiser'))]));
     if (yes == true) { await DemoStore.reset(); await refresh(); }
   }
+  Future<void> accountScreen() async {
+    if (api.demo) { message('Le mode démonstration ne nécessite pas de compte.'); return; }
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AccountScreen(
+      server: api.url, initialNumber: employeeNumber, currentToken: api.personalToken,
+      onSession: (token, number, role) {
+        api.personalToken = token;
+        api.personalRole = role;
+        if (number.isNotEmpty) employeeNumber = number;
+        if (mounted) setState(() {});
+      },
+    )));
+    if (mounted) await refresh();
+  }
   Future<void> settings() async {
     final server = TextEditingController(text: api.url), key = TextEditingController(text: api.token), employee = TextEditingController(text: employeeNumber);
     await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(title:const Text('Connexion au serveur'),content:SizedBox(width:420,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
@@ -276,7 +292,7 @@ class _HomeState extends State<Home> {
         catch(e) { if(dialog.mounted) ScaffoldMessenger.of(dialog).showSnackBar(SnackBar(content:Text('Échec : ${e.toString().replaceFirst('Exception: ','')}'))); }
       },icon:const Icon(Icons.wifi_tethering),label:const Text('Tester la connexion'))]))),actions:[
       TextButton(onPressed:()=>Navigator.pop(dialog),child:const Text('Annuler')),
-      FilledButton(onPressed:() async {final number=employee.text.trim(); if(number.isNotEmpty && !RegExp(r'^\d{1,8}$').hasMatch(number)){message('Le numéro doit contenir 1 à 8 chiffres.');return;} final prefs=await SharedPreferences.getInstance(); await prefs.setString('employee_number_v13',number); employeeNumber=number; await api.save(server.text,key.text); if(dialog.mounted) Navigator.pop(dialog); await refresh();},child:const Text('Enregistrer'))]));
+      FilledButton(onPressed:() async {final number=employee.text.trim(); if(number.isNotEmpty && !RegExp(r'^\d{1,8}$').hasMatch(number)){message('Le numéro doit contenir 1 à 8 chiffres.');return;} final prefs=await SharedPreferences.getInstance(); await prefs.setString('employee_number_v13',number); employeeNumber=number; await api.save(server.text,key.text); api.personalToken=''; api.personalRole=''; if(dialog.mounted) Navigator.pop(dialog); await refresh();},child:const Text('Enregistrer'))]));
     server.dispose(); key.dispose(); employee.dispose();
   }
   Future<void> productEditor() async {
@@ -337,7 +353,7 @@ class _HomeState extends State<Home> {
   @override
   Widget build(BuildContext context) {
     final alerts = products.where((p)=>(p['quantity'] as num).toDouble()<=(p['alert_at'] as num).toDouble()).length;
-    return Scaffold(appBar:AppBar(title:Row(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/icon.png',width:36,height:36),const SizedBox(width:8),const Flexible(child:Text('Îlot Peinture',overflow:TextOverflow.ellipsis,style:TextStyle(fontWeight:FontWeight.w800,fontSize:20)))]),actions:[if(employeeNumber.isNotEmpty) Center(child:Padding(padding:const EdgeInsets.only(right:4),child:Text('N° $employeeNumber',style:const TextStyle(fontSize:12,fontWeight:FontWeight.w700)))),IconButton(tooltip:'Traçabilité pilote',onPressed:()=>Navigator.of(context).push(MaterialPageRoute(builder:(context)=>TraceabilityScreen(request:api.request,demo:api.demo,products:products,files:files,employeeNumber:employeeNumber))),icon:const Icon(Icons.fact_check_outlined)),IconButton(tooltip:'Actualiser',onPressed:refresh,icon:const Icon(Icons.refresh)),IconButton(tooltip:'Serveur',onPressed:settings,icon:const Icon(Icons.settings_outlined))]),
+    return Scaffold(appBar:AppBar(title:Row(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/icon.png',width:36,height:36),const SizedBox(width:8),const Flexible(child:Text('Îlot Peinture',overflow:TextOverflow.ellipsis,style:TextStyle(fontWeight:FontWeight.w800,fontSize:20)))]),actions:[if(employeeNumber.isNotEmpty) Center(child:Padding(padding:const EdgeInsets.only(right:4),child:Text('N° $employeeNumber',style:const TextStyle(fontSize:12,fontWeight:FontWeight.w700)))),IconButton(tooltip:'Traçabilité pilote',onPressed:()=>Navigator.of(context).push(MaterialPageRoute(builder:(context)=>TraceabilityScreen(request:api.request,demo:api.demo,products:products,files:files,employeeNumber:employeeNumber))),icon:const Icon(Icons.fact_check_outlined)),IconButton(tooltip:'Compte professionnel',onPressed:accountScreen,icon:Icon(api.personalToken.isEmpty?Icons.person_outline:Icons.verified_user_outlined)),IconButton(tooltip:'Actualiser',onPressed:refresh,icon:const Icon(Icons.refresh)),IconButton(tooltip:'Serveur',onPressed:settings,icon:const Icon(Icons.settings_outlined))]),
       bottomNavigationBar:NavigationBar(height:72,indicatorColor:const Color(0xffc6eeea),backgroundColor:const Color(0xfff8fcfd),selectedIndex:page,onDestinationSelected:(v)=>setState(()=>page=v),destinations:const [NavigationDestination(icon:Icon(Icons.dashboard_outlined),label:'Accueil'),NavigationDestination(icon:Icon(Icons.inventory_2_outlined),label:'Stocks'),NavigationDestination(icon:Icon(Icons.folder_copy_outlined),label:'Dossiers')]),
       floatingActionButton:page==0?null:FloatingActionButton.extended(onPressed:page==1?productEditor:()=>fileEditor(),icon:const Icon(Icons.add),label:Text(page==1?'Produit':'Dossier')),
       body:RefreshIndicator(onRefresh:refresh,child:ListView(padding:const EdgeInsets.symmetric(horizontal:16,vertical:14),children:[

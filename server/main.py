@@ -13,7 +13,7 @@ DATA = os.getenv('DATA_PATH', '/data/ilot.db')
 TOKEN = os.getenv('API_TOKEN', '')
 if len(TOKEN) < 32 or TOKEN == 'CHANGEZ_CETTE_CLE_AVANT_UTILISATION':
     raise RuntimeError('API_TOKEN absent ou trop court (minimum 32 caractères).')
-from accounts import router as account_router, init_accounts
+from accounts import router as account_router, init_accounts, current as current_account
 app = FastAPI(title='Îlot Peinture API', version='14.0', docs_url=None, redoc_url=None)
 app.include_router(account_router)
 
@@ -87,8 +87,11 @@ def startup():
     init_accounts()
 
 def auth(authorization: str | None):
-    if not authorization or not hmac.compare_digest(authorization, 'Bearer ' + TOKEN):
-        raise HTTPException(401, 'Clé serveur incorrecte')
+    # Transition V22 : clé API historique ou session individuelle valide.
+    # Les anciennes écritures par clé partagée restent possibles : PAS d'audit nominatif garanti.
+    if authorization and hmac.compare_digest(authorization, 'Bearer ' + TOKEN):
+        return None
+    return current_account(authorization)
 
 class Product(BaseModel):
     name: str = Field(min_length=1, max_length=150)
