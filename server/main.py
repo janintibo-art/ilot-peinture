@@ -17,24 +17,7 @@ from accounts import router as account_router, init_accounts, current as current
 app = FastAPI(title='Îlot Peinture API', version='14.0', docs_url=None, redoc_url=None)
 app.include_router(account_router)
 
-# V23 : journal de transition (non transactionnel, ne vaut pas piste d'audit certifiée).
-from fastapi import Request
-@app.middleware('http')
-async def v23_audit(request: Request, call_next):
-    response = await call_next(request)
-    if request.method in ('POST','PUT','PATCH','DELETE') and not request.url.path.startswith('/auth/') and response.status_code < 400:
-        try:
-            actor = current_account(request.headers.get('authorization'))
-            with db() as con:
-                con.execute('CREATE TABLE IF NOT EXISTS audit_events_v23 (id INTEGER PRIMARY KEY, operator_number TEXT NOT NULL, method TEXT NOT NULL, endpoint TEXT NOT NULL, at TEXT NOT NULL)')
-                con.execute('INSERT INTO audit_events_v23(operator_number,method,endpoint,at) VALUES(?,?,?,?)',
-                  (actor['employee_number'],request.method,request.url.path,now()))
-        except Exception:
-            # Un incident de journalisation reste un blocage pour le passage en production.
-            # L'intégrité transactionnelle sera implémentée dans les handlers métier.
-            pass
-    return response
-
+# V24_ATOMIC_AUDIT : le journal métier est écrit dans chaque transaction SQLite.
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -103,6 +86,12 @@ def startup():
         c.execute('CREATE INDEX IF NOT EXISTS idx_process_records_lot ON process_records(material_lot_id, id DESC)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_file_history_file ON file_history(file_id, id DESC)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_movements_product ON movements(product_id, id DESC)')
+    with db() as c:
+        c.execute('''CREATE TABLE IF NOT EXISTS audit_events_v24 (
+            id INTEGER PRIMARY KEY, actor TEXT NOT NULL, role TEXT NOT NULL,
+            action TEXT NOT NULL, target TEXT NOT NULL, details TEXT NOT NULL,
+            at TEXT NOT NULL)''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_audit_v24_actor ON audit_events_v24(actor,id DESC)')
     init_accounts()
 
 def auth(authorization: str | None):
@@ -112,9 +101,37 @@ def auth(authorization: str | None):
         return None
     return current_account(authorization)
 
-# V23_AUTH_GUARD : toute écriture exige un jeton de session personnel valide.
-def write_auth(authorization: str | None):
-    return current_account(authorization)
+# V24 : roles d'ecriture. Le role qualite peut consulter le registre,
+# et l'administrateur garde les fonctions de gestion des zones.
+def write_auth(authorization: str | None, required_role: str = 'operateur'):
+    actor = current_account(authorization)
+    grants = {
+        'operateur': {'operateur','responsable','qualite','administrateur'},
+        'responsable': {'responsable','administrateur'},
+        'administrateur': {'administrateur'},
+    }
+    if actor['role'] not in grants[required_role]:
+        raise HTTPException(403, 'Habilitation insuffisante')
+    return actor
+
+def audit_v24(c, actor, action, target, details=''):
+    # Appeler à l'intérieur du même `with db()` que la modification.
+    c.execute('''INSERT INTO audit_events_v24(actor,role,action,target,details,at)
+                 VALUES(?,?,?,?,?,?)''',
+              (actor['employee_number'],actor['role'],action,str(target),str(details)[:2000],now()))
+
+@app.get('/audit/events')
+def audit_events_v24(authorization: str | None = Header(default=None),
+                     employee_number: str = '', action: str = '', limit: int = 100):
+    actor = current_account(authorization)
+    if actor['role'] not in ('qualite','administrateur'):
+        raise HTTPException(403, 'Réservé au service qualité et aux administrateurs')
+    if limit < 1 or limit > 300: raise HTTPException(422, 'Limite invalide')
+    with db() as c:
+        return [dict(row) for row in c.execute('''SELECT * FROM audit_events_v24
+          WHERE (?='' OR actor=?) AND (?='' OR action=?) ORDER BY id DESC LIMIT ?''',
+          (employee_number,employee_number,action,action,limit))]
+
 
 class Product(BaseModel):
     name: str = Field(min_length=1, max_length=150)
@@ -161,6 +178,7 @@ def add_product(item: Product, authorization: str | None = Header(default=None))
         if item.quantity:
             c.execute('INSERT INTO movements(product_id,delta,reason,created_at) VALUES(?,?,?,?)',
                       (cur.lastrowid,item.quantity,'Stock initial',now()))
+        audit_v24(c, current_account(authorization), 'CREATE_PRODUCT', cur.lastrowid, item.name)
         return {'id':cur.lastrowid}
 
 @app.post('/products/{product_id}/movement')
@@ -174,6 +192,7 @@ def move(product_id: int, item: Movement, authorization: str | None = Header(def
         if new < 0: raise HTTPException(400,'Stock insuffisant')
         c.execute('UPDATE products SET quantity=?, updated_at=? WHERE id=?',(new,now(),product_id))
         c.execute('INSERT INTO movements(product_id,delta,reason,created_at) VALUES(?,?,?,?)',(product_id,item.delta,item.reason,now()))
+        audit_v24(c, current_account(authorization), 'MOVE_STOCK', product_id, item.delta)
         return {'quantity': new}
 
 @app.get('/products/{product_id}/history')
@@ -196,6 +215,7 @@ def add_file(item: WorkFile, authorization: str | None = Header(default=None)):
         with db() as c:
             cur = c.execute('INSERT INTO files(reference,client,location,status,notes,updated_at) VALUES(?,?,?,?,?,?)',
               (item.reference,item.client,item.location,item.status,item.notes,now()))
+            audit_v24(c, current_account(authorization), 'CREATE_FILE', cur.lastrowid, item.reference)
             return {'id':cur.lastrowid}
     except sqlite3.IntegrityError:
         raise HTTPException(409,'Ce numéro de dossier existe déjà')
@@ -212,6 +232,7 @@ def edit_file(file_id: int, item: WorkFile, authorization: str | None = Header(d
             if old['location'] != item.location or old['status'] != item.status:
                 c.execute('INSERT INTO file_history(file_id,previous_location,new_location,previous_status,new_status,changed_at) VALUES(?,?,?,?,?,?)',
                   (file_id,old['location'],item.location,old['status'],item.status,now()))
+            audit_v24(c, current_account(authorization), 'EDIT_FILE', file_id, f'{old["location"]} -> {item.location}; {old["status"]} -> {item.status}')
             return {'updated':True}
     except sqlite3.IntegrityError:
         raise HTTPException(409,'Ce numéro de dossier existe déjà')
@@ -233,43 +254,47 @@ def get_zones(authorization: str | None = Header(default=None)):
 
 @app.post('/zones')
 def create_zone(item: ZoneIn, authorization: str | None = Header(default=None)):
-    write_auth(authorization)
+    write_auth(authorization, 'responsable')
     try:
         with db() as c:
             cur=c.execute('INSERT INTO zones(name) VALUES(?)',(item.name.strip(),))
+            audit_v24(c, current_account(authorization), 'CREATE_ZONE', cur.lastrowid, item.name)
             return {'id':cur.lastrowid}
     except sqlite3.IntegrityError: raise HTTPException(409,'Zone déjà existante')
 
 @app.post('/locations')
 def create_location(item: LocationIn, authorization: str | None = Header(default=None)):
-    write_auth(authorization)
+    write_auth(authorization, 'responsable')
     try:
         with db() as c:
             if c.execute('SELECT id FROM zones WHERE id=?',(item.zone_id,)).fetchone() is None:
                 raise HTTPException(404,'Zone introuvable')
             cur=c.execute('INSERT INTO locations(zone_id,name) VALUES(?,?)',(item.zone_id,item.name.strip()))
+            audit_v24(c, current_account(authorization), 'CREATE_LOCATION', cur.lastrowid, item.name)
             return {'id':cur.lastrowid}
     except sqlite3.IntegrityError: raise HTTPException(409,'Emplacement déjà existant')
 
 @app.delete('/locations/{location_id}')
 def delete_location(location_id: int, authorization: str | None = Header(default=None)):
-    write_auth(authorization)
+    write_auth(authorization, 'administrateur')
     with db() as c:
         loc=c.execute('SELECT name FROM locations WHERE id=?',(location_id,)).fetchone()
         if loc is None: raise HTTPException(404,'Emplacement introuvable')
         if c.execute('SELECT 1 FROM files WHERE location=? LIMIT 1',(loc['name'],)).fetchone():
             raise HTTPException(409,'Emplacement utilisé par un dossier')
         c.execute('DELETE FROM locations WHERE id=?',(location_id,))
+        audit_v24(c, current_account(authorization), 'DELETE_LOCATION', location_id, loc['name'])
         return {'deleted':True}
 
 @app.delete('/zones/{zone_id}')
 def delete_zone(zone_id: int, authorization: str | None = Header(default=None)):
-    write_auth(authorization)
+    write_auth(authorization, 'administrateur')
     with db() as c:
         if c.execute('SELECT 1 FROM locations WHERE zone_id=? LIMIT 1',(zone_id,)).fetchone():
             raise HTTPException(409,'Supprimez les emplacements avant la zone')
         cur=c.execute('DELETE FROM zones WHERE id=?',(zone_id,))
         if not cur.rowcount: raise HTTPException(404,'Zone introuvable')
+        audit_v24(c, current_account(authorization), 'DELETE_ZONE', zone_id, '')
         return {'deleted':True}
 
 
@@ -323,6 +348,7 @@ def add_material_lot(item: MaterialLotIn, authorization: str | None = Header(def
                item.expires_on,item.certificate_ref,item.notes,now()))
         except sqlite3.IntegrityError:
             raise HTTPException(409,'Ce numéro de lot existe déjà pour ce produit')
+        audit_v24(c, current_account(authorization), 'CREATE_LOT', cur.lastrowid, item.lot_number)
         return {'id':cur.lastrowid}
 
 @app.post('/process-records', status_code=201)
@@ -350,6 +376,7 @@ def add_process_record(item: ProcessRecordIn, authorization: str | None = Header
           (item.file_id,item.material_lot_id,item.process_type,item.quantity,item.unit,
            item.operator_number,item.operation_at,item.hardener_lot,item.mix_ratio,item.pot_life_minutes,
            item.powder_temperature_c,item.powder_duration_minutes,item.notes,now()))
+        audit_v24(c, current_account(authorization), 'CREATE_PROCESS', cur.lastrowid, item.process_type)
         return {'id':cur.lastrowid}
 
 @app.get('/files/{file_id}/traceability')
