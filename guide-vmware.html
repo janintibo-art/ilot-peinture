@@ -1,0 +1,31 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guide VMware · Îlot Peinture</title><style>body{font:16px/1.65 system-ui;background:#091b28;color:#e8f6f8;margin:0}main{max-width:900px;margin:auto;padding:32px 22px}a{color:#64e1d0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;background:#123241;padding:26px;border-radius:18px}a.button{display:inline-block;background:#5ee0c9;color:#062530;border-radius:12px;padding:10px 18px;text-decoration:none;font-weight:700}</style></head><body><main><p><a href="./">← Retour à Îlot Peinture</a></p><h1>Guide d’installation VMware</h1><p>Document technique de préproduction destiné au service informatique.</p><p><a class="button" href="DOC_VMWARE_V12.md" download>⬇ Télécharger le guide</a></p><pre># Îlot Peinture — préparation de la VM VMware (V12)
+
+**Statut : préproduction, à installer uniquement après validation informatique.** La V12 prépare une API centralisée et des emplacements partagés côté serveur. L&#x27;application Android V11 conserve encore sa configuration locale des zones : l&#x27;intégration Android de `/zones` est une étape ultérieure.
+
+## Pré requis proposés (à valider par l&#x27;équipe informatique)
+
+- VM **dédiée** Ubuntu Server 24.04 LTS ou Debian 12, jamais sur la VM de pointage.
+- 2 vCPU, 4 Go RAM, 30 Go disque pour un petit pilote ; ajuster selon charge et sauvegardes.
+- Docker Engine et plugin Docker Compose, réseau interne, IP réservée, pare-feu.
+- HTTPS via reverse proxy interne / certificats de confiance ou accès VPN ; ne pas exposer le port HTTP à Internet. L&#x27;APK existant accepte HTTP sur LAN, mais celui-ci n&#x27;est pas recommandé pour de vraies données métier.
+- Validation sécurité / confidentialité par l&#x27;administrateur avant de saisir des données de clients.
+
+## Installation (par un administrateur)
+
+1. Cloner le dépôt `https://github.com/janintibo-art/ilot-peinture` sur la **VM dédiée**.
+2. Dans `server/`, copier `.env.example` en `.env`, puis générer un secret avec `python3 -c &quot;import secrets; print(secrets.token_urlsafe(48))&quot;`. Remplacer entièrement `API_TOKEN` par ce secret. Ne jamais publier ce fichier.
+3. Conserver `BIND_ADDRESS=127.0.0.1` tant que le reverse proxy sécurisé n&#x27;est pas en place. Une configuration à `0.0.0.0` nécessite des règles réseau strictes et un canal TLS adapté.
+4. Exécuter `docker compose up -d --build` dans `server/`, puis `docker compose ps` et `curl http://127.0.0.1:8000/health` sur la VM.
+5. Dans l&#x27;APK, désactiver Démonstration, configurer l&#x27;URL réseau validée et la clé, puis tester depuis le Wi-Fi de l&#x27;entreprise.
+
+## Sauvegardes et reprise
+
+La base SQLite est persistée dans le volume Docker `ilot_data`. La commande de sauvegarde cohérente est `docker compose exec -T api python backup.py`. Prévoir une tâche planifiée sur la VM, la copie chiffrée **hors de la VM** des sauvegardes, la rotation, et un test documenté de restauration. Ne pas utiliser `docker compose down -v` : cela supprime le volume et les données. Les snapshots VMware ne remplacent pas une sauvegarde applicative. Les fichiers `.sqlite3` produits dans `/data/backups` restent dans le volume tant qu&#x27;ils ne sont pas exportés vers un autre emplacement sécurisé.
+
+## Limites avant production
+
+- Identifiants individuels, rôles, audit complet des actions, TLS, rotation de secret et stockage sécurisé sur Android restent à développer et valider.
+- La V12 propose les endpoints communs `/zones` et `/locations`, **sans synchronisation de la configuration V11 sur Android**.
+- Pas d&#x27;intégration à l&#x27;application de pointage ni à son serveur actuel.
+- Vérifier les règles IT de votre entreprise avant d&#x27;héberger des dossiers et des données client.
+</pre></main></body></html>
